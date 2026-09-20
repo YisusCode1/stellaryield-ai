@@ -1,64 +1,52 @@
 # StellarYield AI
 
+> 🌐 **Español:** Puedes leer este documento en español en [README.es.md](README.es.md).
+
 AI-assisted DeFi experience built on Stellar.
 
 ## Concept
 
-StellarYield AI is a Stellar-native dApp that analyzes lending
-markets and provides recommendations to users.
+StellarYield AI is a Stellar-native dApp that analyzes lending markets and provides explainable strategy recommendations to users.
 
 The AI does not control user funds.
 
-AI recommends.
-The user decides.
-The wallet signs.
-Stellar executes.
+* **AI recommends.**
+* **The user decides.**
+* **The wallet signs.**
+* **Stellar executes.**
 
-The AI Advisor is an informational layer only. It consumes market data and a
-user-selected risk profile to produce an explainable recommendation. It never
-accesses wallet keys, requests a signature, constructs transactions, or moves
-funds.
+The AI Advisor acts purely as an informational layer. It consumes real-time market data and a user-selected risk profile to produce a deterministic recommendation. It never accesses wallet keys, requests direct signatures, constructs raw transactions, or holds custody of funds.
 
-## Stack
+---
 
-- Stellar Testnet
-- Soroban / Rust
-- XOXNO
-- React
-- TypeScript
-- Node.js
-- AI Advisor
-- Docker
-- Docker Compose
+## Architecture & On-Chain Integration
 
-## AI Advisor
+* **Stellar Testnet & Soroban Smart Contracts**: Vault contract (`stellaryield-vault`) deployed on-chain to record strategy recommendations and handle withdrawals with an automated 0.25% fee logic.
+* **AI Advisor API**: Deterministic backend service evaluating market snapshots against risk profiles (`CONSERVATIVE`, `MODERATE`, `AGGRESSIVE`).
+* **Frontend**: React + TypeScript application with web3 wallet integration (Freighter / Albedo).
 
-The Advisor is implemented as a deterministic, explainable API. It evaluates a
-server-side market snapshot against a user-selected risk profile and returns a
-recommendation or an explicit `not_recommended` response. It never accepts wallet
-secrets, transaction payloads or signatures.
+### On-Chain Contract Info (Testnet)
+* **Contract Name**: `stellaryield-vault`
+* **Contract ID**: `CDXZ3ILDQHOLJKLSXH6F4CJ7YWXUFIUE7FBKFC3AEO6B4C3FMXQXWZOP`
+* **Network**: Stellar Testnet (`https://soroban-testnet.stellar.org:443`)
+* **Network Passphrase**: `"Test SDF Network ; September 2015"`
 
-See [the Advisor API guide](docs/advisor-api.md) for local setup, endpoints and
-security controls, and [the Persona 3 plan](docs/persona-3-plan.md) for the demo
-and product requirements.
+---
 
-## Project Structure
+## Tech Stack
 
-```text
-apps/
-  web/              Frontend
-  api/              Backend/API
+- **Blockchain**: Stellar Testnet, Soroban (Rust SDK)
+- **Backend / API**: Node.js, TypeScript, Express (`apps/api`)
+- **Frontend**: React, TypeScript, Vite (`apps/web`)
+- **Integrations**: XOXNO Markets, `@stellar/stellar-sdk`
+- **Infrastructure**: Docker, Docker Compose, npm Workspaces
 
-contracts/
-  soroban/          Soroban contracts
+---
 
-packages/
-  shared/           Shared types
+## Quick Start (Local Development)
 
-docs/
-  architecture.md
-  persona-3-plan.md  AI Advisor, product and demo plan
-
-docker/
-  Docker configuration
-```
+### 1. Clone & Install Dependencies
+```bash
+git clone [https://github.com/tu-usuario/stellaryield-ai.git](https://github.com/tu-usuario/stellaryield-ai.git)
+cd stellaryield-ai
+npm install
