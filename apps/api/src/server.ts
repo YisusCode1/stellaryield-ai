@@ -3,12 +3,13 @@ import { loadConfig } from './config.js'
 import { DemoMarketProvider } from './providers/demo-market-provider.js'
 import type { MarketProvider } from './providers/market-provider.js'
 import { UnavailableMarketProvider } from './providers/unavailable-market-provider.js'
+import { XoxnoMarketProvider } from './providers/xoxno-market-provider.js'
 
 const config = loadConfig()
 const marketProvider: MarketProvider =
   config.marketSource === 'demo'
     ? new DemoMarketProvider(config.network)
-    : new UnavailableMarketProvider()
+    : new XoxnoMarketProvider()
 
 const app = createApp(config, marketProvider)
 const server = app.listen(config.port, () => {
