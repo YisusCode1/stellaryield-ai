@@ -2,7 +2,7 @@
 
 > 🌐 **Español:** Puedes leer este documento en español en [README.es.md](README.es.md).
 
-AI-assisted DeFi experience built on Stellar.
+AI-assisted DeFi yield aggregator and lending interface built on Stellar Soroban.
 
 ## Concept
 
@@ -15,37 +15,40 @@ The AI does not control user funds.
 * **The wallet signs.**
 * **Stellar executes.**
 
-The AI Advisor acts purely as an informational layer. It consumes real-time market data and a user-selected risk profile to produce a deterministic recommendation. It never accesses wallet keys, requests direct signatures, constructs raw transactions, or holds custody of funds.
+The AI Advisor acts purely as an informational layer. It consumes real-time market data and a user-selected risk profile to produce deterministic recommendations. It never accesses wallet keys, requests direct signatures, constructs raw transactions, or holds custody of funds.
 
 ---
 
 ## Architecture & On-Chain Integration
 
-* **Stellar Testnet & Soroban Smart Contracts**: Vault contract (`stellaryield-vault`) deployed on-chain to record strategy recommendations and handle withdrawals with an automated 0.25% fee logic.
+* **Stellar Testnet & Soroban Smart Contracts**: Custom Vault contract (`StellarYieldVault`) integrated with custom Stellar Asset Contracts (SAC) to handle automated multi-token supply and deposit logic.
 * **AI Advisor API**: Deterministic backend service evaluating market snapshots against risk profiles (`CONSERVATIVE`, `MODERATE`, `AGGRESSIVE`).
-* **Frontend**: React + TypeScript application with web3 wallet integration (Freighter / Albedo).
+* **Frontend**: React + TypeScript application with web3 wallet integration (Freighter) and seamless XDR transaction building/deserialization.
 
-### On-Chain Contract Info (Testnet)
-* **Contract Name**: `stellaryield-vault`
-* **Contract ID**: `CDXZ3ILDQHOLJKLSXH6F4CJ7YWXUFIUE7FBKFC3AEO6B4C3FMXQXWZOP`
+### On-Chain Deployed Contracts (Testnet)
+
+* **Vault Contract ID**: `CCPVJG5PAHSMUULFKV2BJ4QIEN5F7CKE3IONHFB5EZBYY4JFEW47IZGZ`
+* **USDC Token (SAC) Contract ID**: `CCQRAIMWN62JBVUCKCUJFZHDKXMSBHDP7KHFOXI3HETCTJUVIXW5SX7P`
+* **Issuer Account (alice)**: `GCGZQK65HHN2KCDWGWEE4O73K7JAOSRQP6LAIONCDLTDS7LWFQWEQM33`
 * **Network**: Stellar Testnet (`https://soroban-testnet.stellar.org:443`)
-* **Network Passphrase**: `"Test SDF Network ; September 2015"`
+* **Network Passphrase**: `Test SDF Network ; September 2015`
 
 ---
 
 ## Tech Stack
 
-- **Blockchain**: Stellar Testnet, Soroban (Rust SDK)
-- **Backend / API**: Node.js, TypeScript, Express (`apps/api`)
-- **Frontend**: React, TypeScript, Vite (`apps/web`)
-- **Integrations**: XOXNO Markets, `@stellar/stellar-sdk`
-- **Infrastructure**: Docker, Docker Compose, npm Workspaces
+* **Blockchain**: Stellar Testnet, Soroban Rust SDK (`soroban-sdk`)
+* **Backend / API**: Node.js, TypeScript, Express (`apps/api`)
+* **Frontend**: React, TypeScript, Vite (`apps/web`)
+* **Wallet / SDK**: `@stellar/stellar-sdk`, `@stellar/freighter-api`
+* **Infrastructure**: Monorepo with npm Workspaces, Docker Compose
 
 ---
 
 ## Quick Start (Local Development)
 
 ### 1. Clone & Install Dependencies
+
 ```bash
 git clone [https://github.com/tu-usuario/stellaryield-ai.git](https://github.com/tu-usuario/stellaryield-ai.git)
 cd stellaryield-ai

@@ -4,12 +4,20 @@ import Icon from '../components/Icon'
 import Sparkline from '../components/Sparkline'
 import { ErrorBox, Skeleton } from '../components/States'
 import TokenIcon from '../components/TokenIcon'
+import { useWallet } from '../context/WalletContext' // 1. Importar useWallet
 import { fmtNum, fmtPct, fmtUsd } from '../data/mock'
 import { useAsync } from '../hooks/useAsync'
 import { getPortfolio } from '../services/api'
 
 function PortfolioContent() {
-  const { data: p, loading, error, reload } = useAsync(getPortfolio)
+  const { publicKey } = useWallet() // 2. Obtener la clave pública del contexto
+
+  // 3. Pasar publicKey a getPortfolio e incluirlo en las dependencias de useAsync
+  const { data: p, loading, error, reload } = useAsync(
+    () => getPortfolio(publicKey ?? undefined),
+    [publicKey]
+  )
+
   if (error) return <ErrorBox message={error} onRetry={reload} />
 
   if (loading || !p) {
@@ -80,7 +88,9 @@ export default function Portfolio() {
           <p className="muted">Tu posición actual en XOXNO y el rendimiento de tus activos.</p>
         </div>
       </div>
-      <ConnectGate text="Conecta tu wallet para ver tus posiciones y ganancias."><PortfolioContent /></ConnectGate>
+      <ConnectGate text="Conecta tu wallet para ver tus posiciones y ganancias.">
+        <PortfolioContent />
+      </ConnectGate>
     </>
   )
 }

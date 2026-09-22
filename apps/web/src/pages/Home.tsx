@@ -9,13 +9,21 @@ import { ErrorBox, Skeleton, TableSkeleton } from '../components/States'
 import TokenIcon from '../components/TokenIcon'
 import UtilBar from '../components/UtilBar'
 import WhyPanel from '../components/WhyPanel'
+import { useWallet } from '../context/WalletContext'
 import { fmtNum, fmtPct, fmtUsd } from '../data/mock'
 import { useAsync } from '../hooks/useAsync'
 import { riskLabels } from '../lib/scoring'
 import { getMarkets, getRecommendation, getWallet } from '../services/api'
 
 function BalanceCard() {
-  const { data: w, loading, error, reload } = useAsync(getWallet)
+  const { publicKey } = useWallet()
+  
+  // Re-ejecuta la llamada a getWallet cuando cambia el estado de publicKey
+  const { data: w, loading, error, reload } = useAsync(
+    () => getWallet(publicKey ?? undefined),
+    [publicKey]
+  )
+
   if (error) return <ErrorBox message={error} onRetry={reload} />
 
   return (
@@ -23,15 +31,20 @@ function BalanceCard() {
       <div>
         <p className="muted">Tu saldo total</p>
         {loading || !w ? (
-          <div className="stack"><Skeleton w={170} h={38} /><Skeleton w={110} h={14} /></div>
+          <div className="stack">
+            <Skeleton w={170} h={38} />
+            <Skeleton w={110} h={14} />
+          </div>
         ) : (
           <>
-            <p className="big"><CountUp value={w.totalUsd} format={fmtUsd} /></p>
+            <p className="big">
+              <CountUp value={w.totalUsd} format={fmtUsd} />
+            </p>
             <p className="muted">≈ {fmtNum(w.totalUsdc)} USDC</p>
           </>
         )}
-
       </div>
+
       {loading || !w ? (
         <Skeleton h={92} r={12} />
       ) : (
@@ -39,8 +52,14 @@ function BalanceCard() {
           {w.balances.map((b) => (
             <li key={b.symbol}>
               <TokenIcon symbol={b.symbol} size={30} />
-              <span className="sym">{b.symbol}<small>Stellar</small></span>
-              <span className="amt">{fmtNum(b.amount)}<small>≈ {fmtUsd(b.usd)}</small></span>
+              <span className="sym">
+                {b.symbol}
+                <small>Stellar</small>
+              </span>
+              <span className="amt">
+                {fmtNum(b.amount)}
+                <small>≈ {fmtUsd(b.usd)}</small>
+              </span>
             </li>
           ))}
         </ul>
@@ -52,6 +71,7 @@ function BalanceCard() {
 function RecommendationCard() {
   const { data, loading, error, reload } = useAsync(() => getRecommendation('safe', 100, 'USDC'))
   const [why, setWhy] = useState(false)
+
   if (error) return <ErrorBox message={error} onRetry={reload} />
 
   if (loading || !data) {
@@ -63,7 +83,6 @@ function RecommendationCard() {
         <Skeleton w={140} h={40} />
       </section>
     )
-
   }
 
   const { market, explanation } = data.items[0]
@@ -96,7 +115,6 @@ function RecommendationCard() {
 }
 
 export default function Home() {
-
   const { data, loading, error, reload } = useAsync(getMarkets)
   const featured = (data ?? []).slice(0, 2)
 
@@ -117,7 +135,9 @@ export default function Home() {
       </section>
 
       <div className="grid-2">
-        <ConnectGate text="Conecta tu wallet para ver tu saldo y tus activos."><BalanceCard /></ConnectGate>
+        <ConnectGate text="Conecta tu wallet para ver tu saldo y tus activos.">
+          <BalanceCard />
+        </ConnectGate>
         <RecommendationCard />
       </div>
 
@@ -145,11 +165,20 @@ export default function Home() {
                 {loading && <TableSkeleton rows={2} cols={5} />}
                 {!loading && featured.map((m) => (
                   <tr key={m.symbol}>
-                    <td><div className="asset"><TokenIcon symbol={m.symbol} /><span>{m.symbol}<small>{m.network}</small></span></div></td>
+                    <td>
+                      <div className="asset">
+                        <TokenIcon symbol={m.symbol} />
+                        <span>{m.symbol}<small>{m.network}</small></span>
+                      </div>
+                    </td>
                     <td className="green">{fmtPct(m.supplyApy)}</td>
                     <td className="green">{fmtPct(m.borrowApy)}</td>
                     <td><UtilBar value={m.utilization} /></td>
-                    <td className="right"><Link className="btn btn-primary btn-sm" to={`/markets/${m.symbol}`}>Supply <Icon name="arrow" size={14} /></Link></td>
+                    <td className="right">
+                      <Link className="btn btn-primary btn-sm" to={`/markets/${m.symbol}`}>
+                        Supply <Icon name="arrow" size={14} />
+                      </Link>
+                    </td>
                   </tr>
                 ))}
               </tbody>

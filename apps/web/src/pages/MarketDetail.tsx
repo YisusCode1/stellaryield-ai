@@ -23,8 +23,18 @@ const tabs: { id: Tab; label: string }[] = [
 export default function MarketDetail() {
   const { symbol = '' } = useParams()
   const wallet = useWallet()
+
+  // Extraer la dirección pública de wallet.publicKey o wallet.address
+  const activeAddress = wallet.publicKey ?? wallet.address ?? ''
+
   const market = useAsync(() => getMarket(symbol), [symbol])
-  const info = useAsync(() => (wallet.status === 'connected' ? getWallet() : Promise.resolve(null)), [wallet.status])
+
+  // Se envía activeAddress a getWallet(...)
+  const info = useAsync(
+    () => (wallet.status === 'connected' && activeAddress ? getWallet(activeAddress) : Promise.resolve(null)),
+    [wallet.status, activeAddress]
+  )
+
   const [tab, setTab] = useState<Tab>('supply')
   const [amount, setAmount] = useState('100')
   const [txOpen, setTxOpen] = useState(false)
@@ -52,18 +62,34 @@ export default function MarketDetail() {
     )
   }
 
+  // Mapeo defensivo para tolerar camelCase (supplyApy) y snake_case (supply_apy)
+  const supplyApy = m.supplyApy ?? (m as any).supply_apy ?? 0
+  const borrowApy = m.borrowApy ?? (m as any).borrow_apy ?? 0
+
   const connected = wallet.status === 'connected'
-  const balance = info.data?.balances.find((b) => b.symbol === m.symbol)?.amount ?? 0
+
+  // Búsqueda flexible de balances en respuesta directa de Horizon o normalizada
+  const balance = (() => {
+    if (!info.data) return 0
+    const rawBalances = info.data.balances ?? (info.data as any).raw?.balances ?? []
+    const found = rawBalances.find((b: any) => {
+      const sym = (b.symbol ?? b.asset_code ?? (b.asset_type === 'native' ? 'XLM' : '')).toLowerCase()
+      return sym === m.symbol.toLowerCase()
+    })
+    if (!found) return 0
+    return typeof found.amount === 'number' ? found.amount : parseFloat(found.amount ?? found.balance ?? '0')
+  })()
+
   const value = Number(amount)
   const isBorrow = tab === 'borrow'
-  const apy = isBorrow ? m.borrowApy : m.supplyApy
+  const apy = isBorrow ? borrowApy : supplyApy
+
   const error =
     !amount || Number.isNaN(value) || value <= 0
       ? 'Ingresa un monto mayor a 0.'
       : connected && !isBorrow && value > balance
         ? `Tu balance disponible es ${fmtNum(balance)} ${m.symbol}.`
         : ''
-
 
   return (
     <>
@@ -75,8 +101,8 @@ export default function MarketDetail() {
           <span><strong className="h1-sm">{m.symbol}</strong><small>{m.network}</small></span>
         </div>
         <div className="apy-pair">
-          <div><small>APY de Supply</small><strong className="green big-sm">{fmtPct(m.supplyApy)}</strong></div>
-          <div><small>APY de Borrow</small><strong className="green big-sm">{fmtPct(m.borrowApy)}</strong></div>
+          <div><small>APY de Supply</small><strong className="green big-sm">{fmtPct(supplyApy)}</strong></div>
+          <div><small>APY de Borrow</small><strong className="green big-sm">{fmtPct(borrowApy)}</strong></div>
         </div>
       </div>
 
@@ -89,15 +115,19 @@ export default function MarketDetail() {
       {tab === 'overview' ? (
         <>
           <section className="card stats-grid">
-            <div><small className="muted">Utilización <Hint text="Porcentaje del dinero depositado que ya está prestado." /></small><strong>{m.utilization}%</strong></div>
-            <div><small className="muted">Liquidez del mercado</small><strong>{m.liquidity}</strong></div>
-            <div><small className="muted">Nivel de riesgo</small><strong className="cap">{m.risk}</strong></div>
+            <div><small className="muted">Utilización <Hint text="Porcentaje del dinero depositado que ya está prestado." /></small><strong>{m.utilization ?? 0}%</strong></div>
+            <div><small className="muted">Liquidez del mercado</small><strong>{m.liquidity ?? '0'}</strong></div>
+            <div><small className="muted">Nivel de riesgo</small><strong className="cap">{m.risk ?? 'bajo'}</strong></div>
             <div><small className="muted">Tu balance</small><strong>{connected ? `${fmtNum(balance)} ${m.symbol}` : '—'}</strong></div>
           </section>
-          <section className="card"><WhyPanel explanation={explain(m, 'yield')} /></section>
+          
+          {/* Pasar el objeto m normalizado con las propiedades aseguradas */}
+          <section className="card">
+            <WhyPanel explanation={explain({ ...m, supplyApy, borrowApy }, 'yield')} />
+          </section>
         </>
+      ) : (  
 
-      ) : (
         <div className="detail-grid">
           <section className="card">
             <h2>{isBorrow ? 'Borrow' : 'Supply'} {m.symbol}</h2>
@@ -129,7 +159,6 @@ export default function MarketDetail() {
           </section>
 
           <aside className="card summary">
-
             <h3>Resumen</h3>
             <ul>
               <li><Icon name="check" size={15} /> Red de Stellar Testnet</li>
@@ -142,7 +171,7 @@ export default function MarketDetail() {
         </div>
       )}
 
-      {tab !== 'borrow' && <Simulator key={m.symbol} apy={m.supplyApy} initialAmount={Number(amount) || 500} />}
+      {tab !== 'borrow' && <Simulator key={m.symbol} apy={supplyApy} initialAmount={Number(amount) || 500} />}
 
       {txOpen && (
         <TxModal input={{ kind: isBorrow ? 'borrow' : 'supply', symbol: m.symbol, amount: value }} apy={apy} onClose={() => setTxOpen(false)} />

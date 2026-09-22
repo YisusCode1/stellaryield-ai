@@ -51,8 +51,17 @@ export const activity = [
   { id: 3, type: 'Faucet', symbol: 'USDC', amount: 250, date: '14 sep 2026', status: 'Confirmada' },
 ]
 
-export const fmtPct = (n: number) => `${n.toFixed(2)}%`
-export const fmtUsd = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-export const fmtNum = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+export const fmtPct = (value?: number): string => {
+  if (value === undefined || value === null || Number.isNaN(value)) {
+    return '0.00%'
+  }
+  return `${value.toFixed(2)}%`
+}
 
-export const fmtAddr = (a: string) => (a.length > 12 ? `${a.slice(0, 4)}...${a.slice(-4)}` : a)
+export const fmtUsd = (n: number) =>
+  `$${(n ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+
+export const fmtNum = (n: number) =>
+  (n ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+export const fmtAddr = (a: string) => (a && a.length > 12 ? `${a.slice(0, 4)}...${a.slice(-4)}` : a ?? '')

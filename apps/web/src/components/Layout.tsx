@@ -17,7 +17,8 @@ const KEY = 'stellaryield:sidebar'
 const readOpen = () => { try { return localStorage.getItem(KEY) !== 'closed' } catch { return true } }
 
 export default function Layout() {
-  const { status, address, connect, disconnect } = useWallet()
+  // Usamos publicKey del contexto y la asignamos a address
+  const { status, publicKey: address, connect, disconnect } = useWallet()
   const [open, setOpen] = useState(readOpen)
 
   const toggle = () => {
@@ -30,7 +31,6 @@ export default function Layout() {
   return (
     <div className={`shell${open ? '' : ' collapsed'}`}>
       <aside className="sidebar" id="sidebar" inert={!open}>
-
         <Brand />
         <nav aria-label="Principal">
           {nav.map((n) => (
@@ -51,6 +51,8 @@ export default function Layout() {
             </svg>
           </button>
           <span className="chip"><i className="dot" />Stellar Testnet</span>
+
+          {/* Si está conectado y existe address/publicKey, muestra la dirección recortada */}
           {status === 'connected' && address ? (
             <>
               <span className="chip"><Icon name="wallet" size={15} />{fmtAddr(address)}</span>
@@ -61,7 +63,10 @@ export default function Layout() {
               {status === 'connecting' ? <><span className="spinner-sm" aria-hidden="true" /> Conectando…</> : 'Conectar wallet'}
             </button>
           )}
-          <span className="avatar" aria-label="Perfil">G</span>
+
+          <span className="avatar" aria-label="Perfil">
+            {address ? address.slice(0, 1) : 'G'}
+          </span>
         </header>
 
         <main className="content">

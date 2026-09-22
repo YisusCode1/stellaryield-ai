@@ -19,7 +19,30 @@ const DEFAULT_FEE_BPS: i128 = 25;     // 25 BPS = 0.25% de comisión al retiro
 
 #[contractimpl]
 impl StellarYieldVault {
-    /// Registra de forma inmutable la recomendación emitida por la IA
+    /// 1. Realiza el depósito (Supply) del token desde la cuenta del usuario hacia el Vault
+    pub fn deposit(
+        env: Env,
+        from: Address,
+        token_address: Address,
+        amount: i128,
+    ) {
+        // Requiere firma y autorización del usuario
+        from.require_auth();
+
+        let client = token::Client::new(&env, &token_address);
+        let contract_address = env.current_contract_address();
+
+        // Transferir los tokens del usuario hacia este contrato Vault
+        client.transfer(&from, &contract_address, &amount);
+
+        // Emitir evento de depósito en Stellar
+        env.events().publish(
+            (Symbol::new(&env, "deposit"), from.clone()),
+            (token_address, amount),
+        );
+    }
+
+    /// 2. Registra de forma inmutable la recomendación emitida por la IA
     pub fn record_recommendation(
         env: Env,
         user: Address,
@@ -46,7 +69,7 @@ impl StellarYieldVault {
         record
     }
 
-    /// Realiza el retiro descontando el Withdraw Fee (0.25%) hacia la Tesorería
+    /// 3. Realiza el retiro descontando el Withdraw Fee (0.25%) hacia la Tesorería
     pub fn withdraw(
         env: Env,
         user: Address,
