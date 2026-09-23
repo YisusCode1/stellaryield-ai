@@ -340,3 +340,55 @@ small { display: block; font-size: 12px; color: var(--muted); font-weight: 500; 
 @media (max-width: 760px) {
   .menu-toggle { display: none; }
 }
+
+
+/* ================= Responsive: tablet y celular ================= */
+.chip { white-space: nowrap; }
+.content > * { min-width: 0; }
+
+@media (max-width: 960px) {
+  .grid-2, .detail-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* Tablet: el menú se abre como panel encima del contenido */
+@media (min-width: 761px) and (max-width: 1024px) {
+  .shell { grid-template-columns: minmax(0, 1fr); }
+  .sidebar { position: fixed; z-index: 40; top: 0; left: 0; bottom: 0; height: auto; width: 250px; transform: translateX(-100%); visibility: hidden; transition: transform .22s ease, visibility .22s; }
+  .sidebar.drawer-open { transform: none; visibility: visible; box-shadow: 12px 0 40px rgba(0, 0, 0, .5); }
+  .scrim { position: fixed; inset: 0; z-index: 30; background: rgba(3, 5, 16, .6); }
+}
+
+/* Celular */
+@media (max-width: 760px) {
+  /* Las tablas pasan a tarjetas: cada fila es una tarjeta con sus etiquetas */
+  .table { min-width: 0; display: block; }
+  .table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .table tbody { display: block; }
+  .table tr { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; padding: 16px 0; border-bottom: 1px solid #141b47; }
+  .table tr:last-child { border-bottom: 0; }
+  .table td { display: block; padding: 0; border: 0; text-align: left; }
+  .table td[data-label]::before { content: attr(data-label); display: block; margin-bottom: 3px; font-size: 11px; font-weight: 600; color: var(--muted); }
+  .table td.td-main, .table td.td-action, .table td.empty { grid-column: 1 / -1; }
+  .table td.td-action .btn { width: 100%; }
+  .table tr[aria-hidden='true'] td:nth-child(n + 4) { display: none; }
+
+  /* Tooltips: en celular salen como aviso fijo sobre la barra inferior */
+
+  .hint-pop { position: fixed; left: 16px; right: 16px; top: auto; bottom: 84px; width: auto; }
+
+  /* Pantallas táctiles: controles más grandes y sin zoom automático en iOS */
+  .tab { padding: 11px 18px; }
+  .btn-sm { padding: 10px 16px; }
+  .search input, .chat-input input, .amount-field input, .amount-field select { font-size: 16px; }
+  .chat-log { height: min(380px, 52dvh); }
+  .modal { max-height: calc(100dvh - 32px); overflow-y: auto; }
+  .page-head { gap: 14px; }
+  .note { flex-wrap: wrap; }
+  .note .link { margin-left: 0; }
+}
+
+@media (max-width: 400px) {
+  .avatar { display: none; }
+  .chip { padding: 7px 10px; font-size: 12px; }
+  .content, .topbar { padding-left: 14px; padding-right: 14px; }
+}

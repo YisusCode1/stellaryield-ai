@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import Icon from './Icon'
 import { Brand, PoweredBy } from './Logo'
@@ -13,28 +13,54 @@ const nav = [
   { to: '/activity', label: 'Actividad', icon: 'clock' },
 ]
 
+// Escucha un media query y se actualiza al girar o cambiar el tamaño de la pantalla
+function useMedia(query: string) {
+  return useSyncExternalStore(
+    (notify) => {
+      const m = window.matchMedia(query)
+      m.addEventListener('change', notify)
+      return () => m.removeEventListener('change', notify)
+    },
+    () => window.matchMedia(query).matches,
+    () => false,
+  )
+}
+
 const KEY = 'stellaryield:sidebar'
 const readOpen = () => { try { return localStorage.getItem(KEY) !== 'closed' } catch { return true } }
 
 export default function Layout() {
   const { status, address, connect, disconnect } = useWallet()
-  const [open, setOpen] = useState(readOpen)
+  const mobile = useMedia('(max-width: 760px)') // celular: barra de navegación inferior
+  const narrow = useMedia('(max-width: 1024px)') // tablet: menú como panel deslizable
+  const [wideOpen, setWideOpen] = useState(readOpen) // escritorio: abierto/cerrado (se recuerda)
+  const [drawer, setDrawer] = useState(false) // tablet: panel abierto/cerrado
+
+  const drawerOpen = narrow && !mobile && drawer
+  const open = narrow ? drawer : wideOpen
+
+  useEffect(() => {
+    if (!drawerOpen) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setDrawer(false) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [drawerOpen])
 
   const toggle = () => {
-    setOpen((v) => {
+    if (narrow) { setDrawer((v) => !v); return }
+    setWideOpen((v) => {
       try { localStorage.setItem(KEY, v ? 'closed' : 'open') } catch { /* sin storage */ }
       return !v
     })
   }
 
   return (
-    <div className={`shell${open ? '' : ' collapsed'}`}>
-      <aside className="sidebar" id="sidebar" inert={!open}>
-
+    <div className={`shell${!narrow && !wideOpen ? ' collapsed' : ''}`}>
+      <aside className={`sidebar${drawerOpen ? ' drawer-open' : ''}`} id="sidebar" inert={!mobile && !open}>
         <Brand />
         <nav aria-label="Principal">
           {nav.map((n) => (
-            <NavLink key={n.to} to={n.to} end={n.end} className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}>
+            <NavLink key={n.to} to={n.to} end={n.end} onClick={() => setDrawer(false)} className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}>
               <Icon name={n.icon} />
               <span>{n.label}</span>
             </NavLink>
@@ -42,6 +68,7 @@ export default function Layout() {
         </nav>
         <PoweredBy />
       </aside>
+      {drawerOpen && <div className="scrim" onClick={() => setDrawer(false)} aria-hidden="true" />}
 
       <div className="main">
         <header className="topbar">
@@ -63,7 +90,6 @@ export default function Layout() {
           )}
           <span className="avatar" aria-label="Perfil">G</span>
         </header>
-
         <main className="content">
           <Outlet />
         </main>
