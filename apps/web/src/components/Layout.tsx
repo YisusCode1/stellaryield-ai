@@ -4,6 +4,7 @@ import Icon from './Icon'
 import { Brand, PoweredBy } from './Logo'
 import { useWallet } from '../context/WalletContext'
 import { fmtAddr } from '../data/mock'
+import Footer from './Footer'
 
 const nav = [
   { to: '/', label: 'Inicio', icon: 'home', end: true },
@@ -72,6 +73,7 @@ export default function Layout() {
         <main className="content">
           <Outlet />
         </main>
+        <Footer />
       </div>
     </div>
   )
