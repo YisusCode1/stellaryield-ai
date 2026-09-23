@@ -6,18 +6,25 @@ import { fmtUsd } from '../data/mock'
 const W = 600
 const H = 150
 
-export default function Simulator({ apy, initialAmount = 500 }: { apy: number; initialAmount?: number }) {
-  const [amount, setAmount] = useState(Math.min(5000, Math.max(50, Math.round(initialAmount / 50) * 50)))
+export default function Simulator({ apy = 0, initialAmount = 500 }: { apy?: number; initialAmount?: number }) {
+  // Asegurar que apy e initialAmount sean números válidos
+  const safeApy = typeof apy === 'number' && !Number.isNaN(apy) ? apy : 0
+  const safeInitial = typeof initialAmount === 'number' && !Number.isNaN(initialAmount) && initialAmount > 0 
+    ? initialAmount 
+    : 500
+
+  const [amount, setAmount] = useState(Math.min(5000, Math.max(50, Math.round(safeInitial / 50) * 50)))
   const [months, setMonths] = useState(12)
 
-  const monthly = apy / 100 / 12
+  const monthly = safeApy / 100 / 12
   const valueAt = (m: number) => amount * Math.pow(1 + monthly, m)
   const final = valueAt(months)
   const gain = final - amount
 
   const pts = Array.from({ length: months + 1 }, (_, m) => {
     const x = (m / months) * W
-    const y = H - 8 - ((valueAt(m) - amount) / (final - amount || 1)) * (H - 24)
+    const denominator = final - amount || 1
+    const y = H - 8 - ((valueAt(m) - amount) / denominator) * (H - 24)
     return `${x.toFixed(1)} ${y.toFixed(1)}`
   })
   const line = 'M' + pts.join(' L')
@@ -26,11 +33,10 @@ export default function Simulator({ apy, initialAmount = 500 }: { apy: number; i
     <section className="card sim">
       <div className="sim-head">
         <h2>Simulador de ganancias <Hint text="Estima cuánto crecería tu dinero con el APY actual, sumando el interés cada mes." /></h2>
-        <span className="badge badge-green">APY {apy.toFixed(2)}%</span>
+        <span className="badge badge-green">APY {safeApy.toFixed(2)}%</span>
       </div>
 
       <div className="sim-controls">
-
         <label>
           <span>Monto: <strong>{fmtUsd(amount)}</strong></span>
           <input type="range" min={50} max={5000} step={50} value={amount} onChange={(e) => setAmount(Number(e.target.value))} />
@@ -63,7 +69,6 @@ export default function Simulator({ apy, initialAmount = 500 }: { apy: number; i
         <path d={`${line} L${W} ${H} L0 ${H} Z`} fill="url(#simfill)" />
         <line x1="0" x2={W} y1={H - 8} y2={H - 8} stroke="#5a648f" strokeDasharray="4 5" vectorEffect="non-scaling-stroke" />
         <path d={line} fill="none" stroke="#2fe0a5" strokeWidth="2.5" vectorEffect="non-scaling-stroke" />
-
       </svg>
       <small className="why-foot">Proyección con el APY actual. El rendimiento real puede variar.</small>
     </section>

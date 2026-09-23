@@ -1,7 +1,7 @@
 # StellarYield AI
 > 🌐 **English:** You can read this document in English in [README.md](README.md).
 
-Experiencia DeFi asistida por Inteligencia Artificial construida sobre Stellar.
+Experiencia DeFi asistida por Inteligencia Artificial construida sobre Stellar Soroban.
 
 ## Concepto
 
@@ -14,31 +14,33 @@ La IA no controla los fondos del usuario.
 * **La billetera firma.**
 * **Stellar ejecuta.**
 
-El Asesor de IA (*AI Advisor*) funciona únicamente como una capa informativa. Consume datos de mercado en tiempo real y el perfil de riesgo seleccionado por el usuario para generar una recomendación determinista. Nunca accede a claves privadas, ni solicita firmas directas, ni construye transacciones sin custodia, ni mantiene la custodia de los fondos.
+El Asesor de IA (*AI Advisor*) funciona únicamente como una capa informativa. Consume datos de mercado en tiempo real y el perfil de riesgo seleccionado por el usuario para generar recomendaciones deterministas. Nunca accede a claves privadas, ni solicita firmas directas, ni construye transacciones en crudo, ni mantiene la custodia de los fondos.
 
 ---
 
 ## Arquitectura e Integración On-Chain
 
-* **Stellar Testnet & Smart Contracts en Soroban**: Contrato de custodia y vault (`stellaryield-vault`) desplegado on-chain para registrar las recomendaciones de estrategia y gestionar retiros aplicando una comisión automatizada del 0.25%.
+* **Stellar Testnet & Smart Contracts en Soroban**: Contrato Vault personalizado (`StellarYieldVault`) integrado con Stellar Asset Contracts (SAC) personalizados para gestionar depósitos y depósitos multitoken de forma automatizada.
 * **API del Asesor de IA**: Servicio de backend determinista que evalúa instantáneas del mercado frente a perfiles de riesgo (`CONSERVATIVE`, `MODERATE`, `AGGRESSIVE`).
-* **Frontend**: Aplicación en React + TypeScript integrada con billeteras Web3 (Freighter / Albedo).
+* **Frontend**: Aplicación en React + TypeScript integrada con billeteras Web3 (Freighter) y deserialización fluida de transacciones XDR.
 
-### Información del Contrato On-Chain (Testnet)
-* **Nombre del Contrato**: `stellaryield-vault`
-* **ID del Contrato**: `CDXZ3ILDQHOLJKLSXH6F4CJ7YWXUFIUE7FBKFC3AEO6B4C3FMXQXWZOP`
+### Información de Contratos Desplegados (Testnet)
+
+* **ID del Contrato Vault**: `CCPVJG5PAHSMUULFKV2BJ4QIEN5F7CKE3IONHFB5EZBYY4JFEW47IZGZ`
+* **ID del Contrato Token USDC (SAC)**: `CCQRAIMWN62JBVUCKCUJFZHDKXMSBHDP7KHFOXI3HETCTJUVIXW5SX7P`
+* **Cuenta Emisora (alice)**: `GCGZQK65HHN2KCDWGWEE4O73K7JAOSRQP6LAIONCDLTDS7LWFQWEQM33`
 * **Red**: Stellar Testnet (`https://soroban-testnet.stellar.org:443`)
-* **Frase de Red**: `"Test SDF Network ; September 2015"`
+* **Frase de Red**: `Test SDF Network ; September 2015`
 
 ---
 
 ## Stack Tecnológico
 
-- **Blockchain**: Stellar Testnet, Soroban (Rust SDK)
+- **Blockchain**: Stellar Testnet, Soroban Rust SDK (`soroban-sdk`)
 - **Backend / API**: Node.js, TypeScript, Express (`apps/api`)
 - **Frontend**: React, TypeScript, Vite (`apps/web`)
-- **Integraciones**: XOXNO Markets, `@stellar/stellar-sdk`
-- **Infraestructura**: Docker, Docker Compose, npm Workspaces
+- **Billetera / SDK**: `@stellar/stellar-sdk`, `@stellar/freighter-api`
+- **Infraestructura**: Monorepo con npm Workspaces, Docker Compose
 
 ---
 

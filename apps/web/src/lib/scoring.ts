@@ -18,22 +18,52 @@ const WEIGHTS: Record<Goal, Record<string, number>> = {
   safe: { risk: 0.5, util: 0.2, liquidity: 0.2, apy: 0.1 },
 }
 
-const clamp = (n: number) => Math.max(0, Math.min(100, Math.round(n)))
+const clamp = (n: number) => Math.max(0, Math.min(100, Math.round(n || 0)))
 
-export function explain(m: Market, goal: Goal): Explanation {
+export function explain(m: any, goal: Goal = 'yield'): Explanation {
+  // 1. Extraer y normalizar propiedades numéricas de forma segura
+  const supplyApy = Number(m?.supplyApy ?? m?.supply_apy ?? 0)
+  const liquidityUsd = Number(m?.liquidityUsd ?? m?.liquidity_usd ?? 0)
+  const utilization = Number(m?.utilization ?? 0)
+  const liquidityText = m?.liquidity ?? '0'
+  const risk: Risk = (m?.risk && RISK_SCORE[m.risk as Risk]) ? (m.risk as Risk) : 'bajo'
+
+  // 2. Factores con formato seguro (.toFixed(2) garantizado)
   const factors: Factor[] = [
-    { key: 'apy', label: 'Rendimiento', score: clamp((m.supplyApy / 6) * 100), detail: `${m.supplyApy.toFixed(2)}% anual` },
-    { key: 'liquidity', label: 'Liquidez', score: clamp((m.liquidityUsd / 1_200_000) * 100), detail: `${m.liquidity} disponibles` },
-    { key: 'risk', label: 'Seguridad', score: RISK_SCORE[m.risk], detail: riskLabels[m.risk] },
-    { key: 'util', label: 'Uso saludable', score: clamp(100 - Math.abs(m.utilization - 60) * 2), detail: `${m.utilization}% utilizado` },
+    { 
+      key: 'apy', 
+      label: 'Rendimiento', 
+      score: clamp((supplyApy / 6) * 100), 
+      detail: `${supplyApy.toFixed(2)}% anual` 
+    },
+    { 
+      key: 'liquidity', 
+      label: 'Liquidez', 
+      score: clamp((liquidityUsd / 1_200_000) * 100), 
+      detail: `${liquidityText} disponibles` 
+    },
+    { 
+      key: 'risk', 
+      label: 'Seguridad', 
+      score: RISK_SCORE[risk], 
+      detail: riskLabels[risk] 
+    },
+    { 
+      key: 'util', 
+      label: 'Uso saludable', 
+      score: clamp(100 - Math.abs(utilization - 60) * 2), 
+      detail: `${utilization}% utilizado` 
+    },
   ]
-  const w = WEIGHTS[goal]
-  const total = clamp(factors.reduce((sum, f) => sum + f.score * w[f.key], 0))
-  return { total, factors }
 
+  const w = WEIGHTS[goal] ?? WEIGHTS.yield
+  const total = clamp(factors.reduce((sum, f) => sum + f.score * (w[f.key] ?? 0), 0))
+  
+  return { total, factors }
 }
 
 export function rankMarkets(markets: Market[], goal: Goal): RankedMarket[] {
+  if (!Array.isArray(markets)) return []
   return markets
     .map((market) => ({ market, explanation: explain(market, goal) }))
     .sort((a, b) => b.explanation.total - a.explanation.total)
