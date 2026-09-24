@@ -77,7 +77,10 @@ export default function MarketDetail() {
       return sym === m.symbol.toLowerCase()
     })
     if (!found) return 0
-    return typeof found.amount === 'number' ? found.amount : parseFloat(found.amount ?? found.balance ?? '0')
+    const item = found as { amount?: number | string; balance?: number | string }
+    return typeof item.amount === 'number'
+      ? item.amount
+      : parseFloat(String(item.amount ?? item.balance ?? '0'))
   })()
 
   const value = Number(amount)

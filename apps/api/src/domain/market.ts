@@ -6,12 +6,16 @@ export type Network = (typeof NETWORKS)[number]
 
 export interface Market {
   asset: string
+  symbol: string // <-- AGREGAR: Alias/propiedad de símbolo (ej: 'USDC')
   supplyApyPercent: number
+  supplyApy: number // <-- AGREGAR: Alias para compatibilidad con frontend
   borrowApyPercent: number
+  borrowApy: number // <-- AGREGAR: Alias para compatibilidad
   availableLiquidityUsd: number
   totalSupplyUsd: number
   totalBorrowUsd: number
   utilizationPercent: number
+  utilization: number // <-- AGREGAR: Alias para compatibilidad
   network: Network
   updatedAt: string
 }

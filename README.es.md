@@ -26,7 +26,7 @@ El Asesor de IA (*AI Advisor*) funciona únicamente como una capa informativa. C
 
 ### Información de Contratos Desplegados (Testnet)
 
-* **ID del Contrato Vault**: `CCPVJG5PAHSMUULFKV2BJ4QIEN5F7CKE3IONHFB5EZBYY4JFEW47IZGZ`
+* **ID del Contrato Vault**: `CAITX5744T6YP2Q6OSDXNRBKLYIL3SWE3XW53FBD2P54CAJODLI6OIMN`
 * **ID del Contrato Token USDC (SAC)**: `CCQRAIMWN62JBVUCKCUJFZHDKXMSBHDP7KHFOXI3HETCTJUVIXW5SX7P`
 * **Cuenta Emisora (alice)**: `GCGZQK65HHN2KCDWGWEE4O73K7JAOSRQP6LAIONCDLTDS7LWFQWEQM33`
 * **Red**: Stellar Testnet (`https://soroban-testnet.stellar.org:443`)

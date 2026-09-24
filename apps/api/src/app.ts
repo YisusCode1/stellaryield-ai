@@ -3,7 +3,7 @@ import express, { type Express, type Request, type Response } from 'express'
 import { recommendSupply } from './advisor/engine.js'
 import type { AppConfig } from './config.js'
 import { createRateLimiter, errorHandler, notFound, requestContext, securityHeaders, strictCors } from './http/middleware.js'
-import { parseAdvisorRequest } from './http/request-schema.js'
+import { parseAdvisorRequest, parseMarketParams } from './http/request-schema.js'
 import type { MarketProvider } from './providers/market-provider.js'
 
 export const createApp = (config: AppConfig, marketProvider: MarketProvider): Express => {
@@ -24,48 +24,62 @@ export const createApp = (config: AppConfig, marketProvider: MarketProvider): Ex
   /* ---------- Endpoints de Mercados (con versión y alias directos) ---------- */
   app.get('/api/v1/markets', async (_req: Request, res: Response) => {
     const snapshot = await marketProvider.getMarketSnapshot()
-    res.status(200).json({ data: snapshot })
+    return res.status(200).json({ data: snapshot })
   })
 
-  app.get('/api/v1/markets/:symbol', async (req: Request, res: Response) => {
-    const snapshot = await marketProvider.getMarketSnapshot()
-    const market = snapshot.markets.find(
-      (m) => m.symbol.toLowerCase() === req.params.symbol.toLowerCase()
-    )
-    if (!market) {
-      return res.status(404).json({ error: 'Mercado no encontrado' })
+  app.get('/api/v1/markets/:symbol', async (req: Request, res: Response, next) => {
+    try {
+      const { symbol } = parseMarketParams(req.params)
+      const snapshot = await marketProvider.getMarketSnapshot()
+      const market = snapshot.markets.find(
+        (m) => m.symbol.toLowerCase() === symbol.toLowerCase() || m.asset.toLowerCase() === symbol.toLowerCase()
+      )
+      if (!market) {
+        return res.status(404).json({ error: 'Mercado no encontrado' })
+      }
+      return res.status(200).json({ data: market })
+    } catch (error) {
+      return next(error)
     }
-    return res.status(200).json({ data: market })
   })
 
   // Alias directos para compatibilidad con llamadas frontend sin prefijo /api/v1
   app.get('/markets', async (_req: Request, res: Response) => {
     const snapshot = await marketProvider.getMarketSnapshot()
-    res.status(200).json(snapshot.markets)
+    return res.status(200).json(snapshot.markets)
   })
 
-  app.get('/markets/:symbol', async (req: Request, res: Response) => {
-    const snapshot = await marketProvider.getMarketSnapshot()
-    const market = snapshot.markets.find(
-      (m) => m.symbol.toLowerCase() === req.params.symbol.toLowerCase()
-    )
-    if (!market) {
-      return res.status(404).json({ error: 'Mercado no encontrado' })
+  app.get('/markets/:symbol', async (req: Request, res: Response, next) => {
+    try {
+      const { symbol } = parseMarketParams(req.params)
+      const snapshot = await marketProvider.getMarketSnapshot()
+      const market = snapshot.markets.find(
+        (m) => m.symbol.toLowerCase() === symbol.toLowerCase() || m.asset.toLowerCase() === symbol.toLowerCase()
+      )
+      if (!market) {
+        return res.status(404).json({ error: 'Mercado no encontrado' })
+      }
+      return res.status(200).json(market)
+    } catch (error) {
+      return next(error)
     }
-    return res.status(200).json(market)
   })
 
   /* ---------- Endpoint de Recomendaciones del Asesor ---------- */
-  app.post('/api/v1/advisor/recommendations', async (req: Request, res: Response) => {
-    const input = parseAdvisorRequest(req.body)
-    const snapshot = await marketProvider.getMarketSnapshot()
-    const recommendation = recommendSupply(snapshot.markets, input, { expectedNetwork: config.network })
-    res.status(200).json({
-      data: {
-        recommendation,
-        marketSnapshotFetchedAt: snapshot.fetchedAt,
-      },
-    })
+  app.post('/api/v1/advisor/recommendations', async (req: Request, res: Response, next) => {
+    try {
+      const input = parseAdvisorRequest(req.body)
+      const snapshot = await marketProvider.getMarketSnapshot()
+      const recommendation = recommendSupply(snapshot.markets, input, { expectedNetwork: config.network })
+      res.status(200).json({
+        data: {
+          recommendation,
+          marketSnapshotFetchedAt: snapshot.fetchedAt,
+        },
+      })
+    } catch (error) {
+      next(error)
+    }
   })
 
   /* ---------- Handler para Actividad (Supply / Withdraw) ---------- */
@@ -113,7 +127,6 @@ export const createApp = (config: AppConfig, marketProvider: MarketProvider): Ex
             status: 'Completado',
           })
         }
-        // Cualquier otra transferencia entrante (incluyendo Faucet/Friendbot de Circle) SE IGNORA explícitamente.
       })
 
       return res.status(200).json(activityList)

@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import ConnectGate from '../components/ConnectGate'
 import CountUp from '../components/CountUp'
-import HeroArt from '../components/HeroArt'
 import Hint from '../components/Hint'
 import Icon from '../components/Icon'
 import { ErrorBox, Skeleton, TableSkeleton } from '../components/States'
@@ -123,7 +122,7 @@ export default function Home() {
       <section className="hero">
         <div className="hero-copy">
           <h1>
-            <span className="grad">Hola, 👋</span>
+            <span className="grad">Hola,</span>
             <br />
             Tu dinero también puede
             <br />
@@ -131,7 +130,22 @@ export default function Home() {
           </h1>
           <p>StellarYield AI analiza el mercado y te recomienda las mejores oportunidades de rendimiento en la red Stellar.</p>
         </div>
-        <HeroArt />
+        <video
+          src="/hero-animation.mp4"
+          autoPlay
+          loop
+          muted
+          playsInline
+          style={{
+            maxWidth: '450px',
+            width: '100%',
+            aspectRatio: '16 / 9',
+            objectFit: 'cover',
+            borderRadius: '5px',
+            WebkitMaskImage: 'radial-gradient(ellipse at center, rgba(0,0,0,1) 50%, rgba(0,0,0,0) 100%)',
+            maskImage: 'radial-gradient(ellipse at center, rgba(0,0,0,1) 50%, rgba(0,0,0,0) 100%)'
+          }}
+        />
       </section>
 
       <div className="grid-2">

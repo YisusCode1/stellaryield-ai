@@ -57,6 +57,7 @@ export interface AppConfig {
   network: Network
   allowedOrigins: readonly string[]
   marketSource: 'demo' | 'xoxno'
+  vaultContractId?: string
 }
 
 export const loadConfig = (env: NodeJS.ProcessEnv = process.env): AppConfig => {

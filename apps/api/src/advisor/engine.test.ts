@@ -8,14 +8,18 @@ const now = new Date('2026-09-19T17:00:00.000Z')
 
 const baseMarket = (overrides: Partial<Market> = {}): Market => ({
   asset: 'USDC',
+  symbol: 'USDC',                      
+  supplyApy: 0.0642,                   
+  borrowApy: 0.091,                    
+  utilization: 0.75,                   
   supplyApyPercent: 6.42,
   borrowApyPercent: 9.1,
-  availableLiquidityUsd: 2_500,
-  totalSupplyUsd: 10_000,
-  totalBorrowUsd: 7_500,
+  availableLiquidityUsd: 25_000,
+  totalSupplyUsd: 100_000,
+  totalBorrowUsd: 75_000,
   utilizationPercent: 75,
   network: 'testnet',
-  updatedAt: '2026-09-19T16:59:00.000Z',
+  updatedAt: now.toISOString(),
   ...overrides,
 })
 

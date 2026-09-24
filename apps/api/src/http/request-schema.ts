@@ -42,3 +42,23 @@ export const parseAdvisorRequest = (body: unknown): AdvisorInput => {
     ...(preferredAsset === undefined ? {} : { preferredAsset }),
   }
 }
+
+// Agrega esto al final de request-schema.ts
+
+export interface MarketParamsInput {
+  symbol: string
+}
+
+export const parseMarketParams = (params: unknown): MarketParamsInput => {
+  if (!isRecord(params)) {
+    throw new ValidationError('Los parámetros deben ser un objeto.')
+  }
+
+  if (typeof params.symbol !== 'string' || !ASSET_PATTERN.test(params.symbol)) {
+    throw new ValidationError('El parámetro symbol debe tener entre 1 y 12 caracteres alfanuméricos.')
+  }
+
+  return {
+    symbol: params.symbol.toUpperCase(),
+  }
+}

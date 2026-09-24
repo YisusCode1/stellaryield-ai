@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "start": "tsx src/server.ts",
+    "build": "tsc",
     "test": "node --import tsx --test src/advisor/engine.test.ts src/http/request-schema.test.ts src/config.test.ts src/app.test.ts",
     "typecheck": "tsc --noEmit"
   },

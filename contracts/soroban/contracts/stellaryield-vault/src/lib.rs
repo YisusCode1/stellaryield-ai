@@ -1,5 +1,5 @@
 #![no_std]
-use soroban_sdk::{contract, contractimpl, contracttype, token, Address, Env, Symbol};
+use soroban_sdk::{contract, contractimpl, contracttype, symbol_short, token, Address, Env, Symbol};
 
 #[contracttype]
 #[derive(Clone, Debug, PartialEq)]
@@ -11,21 +11,38 @@ pub struct RecommendationRecord {
     pub timestamp: u64,
 }
 
+// Clave compuesta para almacenar el saldo por (Usuario, Token)
+#[contracttype]
+#[derive(Clone)]
+pub enum DataKey {
+    Balance(Address, Address),
+}
+
 #[contract]
 pub struct StellarYieldVault;
 
 const BPS_DENOMINATOR: i128 = 10_000; // Base para cálculo porcentual (10000 = 100%)
-const DEFAULT_FEE_BPS: i128 = 25;     // 25 BPS = 0.25% de comisión al retiro
+const DEFAULT_FEE_BPS: i128 = 25;     // 0.25% de comisión de retiro
 
 #[contractimpl]
 impl StellarYieldVault {
-    /// 1. Realiza el depósito (Supply) del token desde la cuenta del usuario hacia el Vault
+    /// Consulta el saldo registrado de un usuario para un token específico
+    pub fn get_balance(env: Env, user: Address, token_address: Address) -> i128 {
+        let key = DataKey::Balance(user, token_address);
+        env.storage().persistent().get(&key).unwrap_or(0)
+    }
+
+    /// 1. Realiza el depósito (Supply) y actualiza el saldo del usuario en storage
     pub fn deposit(
         env: Env,
         from: Address,
         token_address: Address,
         amount: i128,
     ) {
+        if amount <= 0 {
+            panic!("El monto a depositar debe ser mayor a 0");
+        }
+
         // Requiere firma y autorización del usuario
         from.require_auth();
 
@@ -35,9 +52,18 @@ impl StellarYieldVault {
         // Transferir los tokens del usuario hacia este contrato Vault
         client.transfer(&from, &contract_address, &amount);
 
+        // Actualizar el saldo persistente del usuario
+        let key = DataKey::Balance(from.clone(), token_address.clone());
+        let current_balance: i128 = env.storage().persistent().get(&key).unwrap_or(0);
+        let new_balance = current_balance
+            .checked_add(amount)
+            .expect("Overflo/Exceso en el saldo");
+
+        env.storage().persistent().set(&key, &new_balance);
+
         // Emitir evento de depósito en Stellar
         env.events().publish(
-            (Symbol::new(&env, "deposit"), from.clone()),
+            (symbol_short!("deposit"), from),
             (token_address, amount),
         );
     }
@@ -62,42 +88,57 @@ impl StellarYieldVault {
 
         // Emitir evento de auditoría en Stellar
         env.events().publish(
-            (Symbol::new(&env, "ai_recommendation"), user),
+            (symbol_short!("ai_rec"), user),
             record.clone(),
         );
 
         record
     }
 
-    /// 3. Realiza el retiro descontando el Withdraw Fee (0.25%) hacia la Tesorería
+    /// 3. Realiza el retiro validando el saldo depositado del usuario
     pub fn withdraw(
         env: Env,
         user: Address,
         token_address: Address,
         amount: i128,
         treasury: Address,
-        fee_bps: Option<i128>,
     ) {
+        if amount <= 0 {
+            panic!("El monto a retirar debe ser mayor a 0");
+        }
+
         user.require_auth();
 
-        let fee_rate = fee_bps.unwrap_or(DEFAULT_FEE_BPS);
-        let fee_amount = (amount * fee_rate) / BPS_DENOMINATOR;
+        // 1. Verificar y validar saldo depositado por el usuario
+        let key = DataKey::Balance(user.clone(), token_address.clone());
+        let current_balance: i128 = env.storage().persistent().get(&key).unwrap_or(0);
+
+        if amount > current_balance {
+            panic!("Saldo insuficiente depositado en el Vault");
+        }
+
+        // 2. Calcular comisiones y montos finales
+        let fee_amount = (amount * DEFAULT_FEE_BPS) / BPS_DENOMINATOR;
         let user_amount = amount - fee_amount;
+
+        // 3. Descontar saldo y actualizar en storage
+        let new_balance = current_balance - amount;
+        env.storage().persistent().set(&key, &new_balance);
 
         let client = token::Client::new(&env, &token_address);
         let contract_address = env.current_contract_address();
 
-        // 1. Transferir comisión a la billetera de Tesorería del proyecto
+        // 4. Transferir comisión a Tesorería (si aplica)
         if fee_amount > 0 {
             client.transfer(&contract_address, &treasury, &fee_amount);
         }
 
-        // 2. Transferir el remanente (99.75%) al usuario
+        // 5. Transferir remanente al usuario
         client.transfer(&contract_address, &user, &user_amount);
 
-        // 3. Emitir evento de Retiro y Fee cobrado
+        // 6. Emitir evento de Retiro
         env.events().publish(
-            (Symbol::new(&env, "withdraw_with_fee"), user.clone()),
+            (symbol_short!("withdraw"), user),
             (user_amount, fee_amount, treasury),
         );
     }

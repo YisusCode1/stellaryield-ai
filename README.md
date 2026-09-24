@@ -27,7 +27,7 @@ The AI Advisor acts purely as an informational layer. It consumes real-time mark
 
 ### On-Chain Deployed Contracts (Testnet)
 
-* **Vault Contract ID**: `CCPVJG5PAHSMUULFKV2BJ4QIEN5F7CKE3IONHFB5EZBYY4JFEW47IZGZ`
+* **Vault Contract ID**: `CAITX5744T6YP2Q6OSDXNRBKLYIL3SWE3XW53FBD2P54CAJODLI6OIMN`
 * **USDC Token (SAC) Contract ID**: `CCQRAIMWN62JBVUCKCUJFZHDKXMSBHDP7KHFOXI3HETCTJUVIXW5SX7P`
 * **Issuer Account (alice)**: `GCGZQK65HHN2KCDWGWEE4O73K7JAOSRQP6LAIONCDLTDS7LWFQWEQM33`
 * **Network**: Stellar Testnet (`https://soroban-testnet.stellar.org:443`)

@@ -11,6 +11,11 @@
     "dev:web": "npm --workspace apps/web run dev",
     "dev:api": "npm --workspace apps/api run dev",
     "test:api": "npm --workspace apps/api run test",
-    "typecheck:api": "npm --workspace apps/api run typecheck"
+    "typecheck:api": "npm --workspace apps/api run typecheck",
+    "typecheck:web": "npm --workspace apps/web run typecheck",
+    "typecheck": "npm run typecheck:api && npm run typecheck:web",
+    "build:api": "npm --workspace apps/api run build",
+    "build:web": "npm --workspace apps/web run build",
+    "build": "npm run build:api && npm run build:web"
   }
 }
