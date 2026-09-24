@@ -63,19 +63,26 @@ export const createRateLimiter = (options: { maxRequests: number; windowMs: numb
     const now = Date.now()
     const key = req.ip || req.socket.remoteAddress || 'unknown'
     const previous = entries.get(key)
+
+    // Prevent an attacker from retaining an unbounded number of distinct IP
+    // entries. Expired entries are reclaimed first; if the map is still full,
+    // fail closed instead of allocating another entry.
+    if (previous === undefined && entries.size >= maxEntries) {
+      for (const [entryKey, value] of entries) {
+        if (now >= value.resetAt) entries.delete(entryKey)
+      }
+      if (entries.size >= maxEntries) {
+        next(new AppError({ message: 'Demasiadas solicitudes. Inténtalo más tarde.', statusCode: 429, code: 'RATE_LIMITED' }))
+        return
+      }
+    }
+
     const entry = previous === undefined || now >= previous.resetAt
       ? { count: 0, resetAt: now + options.windowMs }
       : previous
 
     entry.count += 1
     entries.set(key, entry)
-
-    if (entries.size > maxEntries) {
-      for (const [entryKey, value] of entries) {
-        if (now >= value.resetAt) entries.delete(entryKey)
-        if (entries.size <= maxEntries) break
-      }
-    }
 
     if (entry.count > options.maxRequests) {
       next(new AppError({ message: 'Demasiadas solicitudes. Inténtalo más tarde.', statusCode: 429, code: 'RATE_LIMITED' }))

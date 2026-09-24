@@ -6,6 +6,13 @@ export type Network = (typeof NETWORKS)[number]
 
 export interface Market {
   asset: string
+  /** Soroban token contract used by the XOXNO transaction builders. */
+  assetAddress?: string
+  hubId?: number
+  spokeId?: number
+  decimals?: number
+  priceUsd?: number
+  supplyEnabled?: boolean
   supplyApyPercent: number
   borrowApyPercent: number
   availableLiquidityUsd: number

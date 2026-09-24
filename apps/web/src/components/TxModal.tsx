@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import Icon from './Icon'
-import { fmtPct } from '../data/mock'
+import { fmtPct } from '../lib/format'
 import { submitTransaction } from '../services/api'
 import type { TxInput } from '../services/api'
 
@@ -9,16 +9,15 @@ type Phase = 'review' | 'signing' | 'confirming' | 'done' | 'error'
 const STEPS = ['Revisar', 'Firmar en wallet', 'Confirmando', 'Listo']
 const INDEX = { review: 0, signing: 1, confirming: 2, done: 3 } as const
 
-export default function TxModal({ input, apy, onClose }: { input: TxInput; apy: number; onClose: () => void }) {
+export default function TxModal({ input, apy, onClose, onSuccess }: { input: TxInput; apy: number; onClose: () => void; onSuccess?: () => void }) {
   const [phase, setPhase] = useState<Phase>('review')
   const [progress, setProgress] = useState(0)
   const [hash, setHash] = useState('')
-  const [demo, setDemo] = useState(false)
   const [error, setError] = useState('')
   const mainBtn = useRef<HTMLButtonElement>(null)
 
   const busy = phase === 'signing' || phase === 'confirming'
-  const label = input.kind === 'supply' ? 'Supply' : 'Borrow'
+  const label = input.kind === 'supply' ? 'Supply' : 'Retiro'
 
   const go = (p: Exclude<Phase, 'error'>) => { setPhase(p); setProgress(INDEX[p]) }
 
@@ -27,8 +26,8 @@ export default function TxModal({ input, apy, onClose }: { input: TxInput; apy: 
     try {
       const res = await submitTransaction(input, (s) => go(s))
       setHash(res.hash)
-      setDemo(!!res.demo)
       go('done')
+      onSuccess?.()
     } catch (e) {
 
       setError(e instanceof Error ? e.message : 'No se pudo completar la transacción.')
@@ -69,7 +68,7 @@ export default function TxModal({ input, apy, onClose }: { input: TxInput; apy: 
             <dl className="tx-summary">
               <div><dt>Acción</dt><dd>{label}</dd></div>
               <div><dt>Monto</dt><dd>{input.amount} {input.symbol}</dd></div>
-              <div><dt>APY estimado</dt><dd className="green">{fmtPct(apy)}</dd></div>
+              <div><dt>APY actual</dt><dd className="green">{fmtPct(apy)}</dd></div>
               <div><dt>Red</dt><dd>Stellar Testnet</dd></div>
               <div><dt>Comisión</dt><dd>0% + fee de red</dd></div>
             </dl>
@@ -88,9 +87,8 @@ export default function TxModal({ input, apy, onClose }: { input: TxInput; apy: 
         {phase === 'done' && (
           <div className="tx-wait" role="status">
             <span className="tx-ok"><Icon name="check" size={26} /></span>
-            <strong>¡Listo! Tu {label.toLowerCase()} de {input.amount} {input.symbol} se confirmó.</strong>
+              <strong>¡Listo! Tu {label.toLowerCase()} de {input.amount} {input.symbol} se confirmó.</strong>
             <p className="muted hash">{hash.slice(0, 10)}…{hash.slice(-8)}</p>
-            {demo && <p className="muted">Modo demo: la transacción es simulada y no existe en el explorador.</p>}
             <a className="link" href={`https://stellar.expert/explorer/testnet/tx/${hash}`} target="_blank" rel="noreferrer">
               Ver en el explorador <Icon name="external" size={13} />
             </a>

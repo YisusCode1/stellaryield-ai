@@ -2,22 +2,20 @@ import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import Hint from '../components/Hint'
 import Icon from '../components/Icon'
-import Simulator from '../components/Simulator'
 import { ErrorBox, Skeleton } from '../components/States'
 import TokenIcon from '../components/TokenIcon'
 import TxModal from '../components/TxModal'
 import WhyPanel from '../components/WhyPanel'
 import { useWallet } from '../context/WalletContext'
-import { fmtNum, fmtPct } from '../data/mock'
+import { fmtNum, fmtPct } from '../lib/format'
 import { useAsync } from '../hooks/useAsync'
 import { explain } from '../lib/scoring'
 import { getMarket, getWallet } from '../services/api'
 
-type Tab = 'overview' | 'supply' | 'borrow'
+type Tab = 'overview' | 'supply'
 const tabs: { id: Tab; label: string }[] = [
   { id: 'overview', label: 'Vista general' },
   { id: 'supply', label: 'Supply' },
-  { id: 'borrow', label: 'Borrow' },
 ]
 
 export default function MarketDetail() {
@@ -77,17 +75,20 @@ export default function MarketDetail() {
       return sym === m.symbol.toLowerCase()
     })
     if (!found) return 0
-    return typeof found.amount === 'number' ? found.amount : parseFloat(found.amount ?? found.balance ?? '0')
+    return typeof found.amount === 'number' ? found.amount : parseFloat(found.amount ?? (found as any).balance ?? '0')
   })()
 
   const value = Number(amount)
-  const isBorrow = tab === 'borrow'
-  const apy = isBorrow ? borrowApy : supplyApy
+  const apy = supplyApy
 
   const error =
     !amount || Number.isNaN(value) || value <= 0
       ? 'Ingresa un monto mayor a 0.'
-      : connected && !isBorrow && value > balance
+      : !m.supplyEnabled
+        ? 'Este mercado de XOXNO no está disponible para Supply en este momento.'
+      : (!m.assetAddress || !m.hubId || !m.spokeId || m.decimals === undefined)
+        ? 'Faltan datos verificables del mercado; no se puede crear una transacción segura.'
+      : connected && balance > 0 && value > balance
         ? `Tu balance disponible es ${fmtNum(balance)} ${m.symbol}.`
         : ''
 
@@ -130,11 +131,9 @@ export default function MarketDetail() {
 
         <div className="detail-grid">
           <section className="card">
-            <h2>{isBorrow ? 'Borrow' : 'Supply'} {m.symbol}</h2>
+            <h2>Supply {m.symbol}</h2>
             <p className="muted">
-              {isBorrow
-                ? `Pide prestado ${m.symbol} usando tus activos como garantía.`
-                : `Deposita tus ${m.symbol} en el mercado de XOXNO y genera rendimiento automáticamente.`}
+              Deposita tus {m.symbol} en el mercado de XOXNO Testnet y genera rendimiento según las tasas del protocolo.
             </p>
             <div className="mini-stats">
               <div><small>Tu balance disponible</small><strong>{connected ? `${fmtNum(balance)} ${m.symbol}` : '—'}</strong></div>
@@ -142,7 +141,7 @@ export default function MarketDetail() {
               <div><small>Liquidez del mercado</small><strong>{m.liquidity}</strong></div>
             </div>
 
-            <label className="field-label" htmlFor="amount">Cantidad a {isBorrow ? 'pedir' : 'depositar'}</label>
+            <label className="field-label" htmlFor="amount">Cantidad a depositar</label>
             <div className="amount-field">
               <input id="amount" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} aria-invalid={!!error} />
               <span className="unit"><TokenIcon symbol={m.symbol} size={22} />{m.symbol}<Icon name="chevron" size={14} /></span>
@@ -171,10 +170,16 @@ export default function MarketDetail() {
         </div>
       )}
 
-      {tab !== 'borrow' && <Simulator key={m.symbol} apy={supplyApy} initialAmount={Number(amount) || 500} />}
-
       {txOpen && (
-        <TxModal input={{ kind: isBorrow ? 'borrow' : 'supply', symbol: m.symbol, amount: value }} apy={apy} onClose={() => setTxOpen(false)} />
+        <TxModal input={{
+          kind: 'supply',
+          symbol: m.symbol,
+          amount: value,
+          assetAddress: m.assetAddress!,
+          hubId: m.hubId!,
+          spokeId: m.spokeId!,
+          decimals: m.decimals!,
+        }} apy={apy} onClose={() => setTxOpen(false)} />
       )}
     </>
   )

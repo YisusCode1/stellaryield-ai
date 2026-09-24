@@ -9,14 +9,19 @@ export class XoxnoMarketProvider implements MarketProvider {
     const markets = rawMarkets.map((item) => ({
       id: item.assetId,
       asset: item.symbol, // El motor busca "asset"
-      symbol: item.symbol,
       protocol: 'XOXNO',
       chain: 'STELLAR',
-      network: 'testnet', // Debe coincidir con config.network
-      supplyApyPercent: item.supplyApy, // El motor busca "supplyApyPercent"
-      borrowApyPercent: 0,
-      totalSupplyUsd: item.availableLiquidityUsd,
-      totalBorrowUsd: 0,
+      network: 'testnet' as const, // Debe coincidir con config.network
+      assetAddress: item.assetId,
+      hubId: item.hubId,
+      spokeId: item.spokeId,
+      decimals: item.decimals,
+      priceUsd: item.priceUsd,
+      supplyEnabled: item.supplyEnabled,
+      supplyApyPercent: item.supplyApy,
+      borrowApyPercent: item.borrowApy,
+      totalSupplyUsd: item.totalDepositsUsd,
+      totalBorrowUsd: item.totalBorrowsUsd,
       availableLiquidityUsd: item.availableLiquidityUsd,
       utilizationPercent: item.utilizationRate, // El motor busca "utilizationPercent"
       updatedAt: new Date().toISOString(),
@@ -24,7 +29,7 @@ export class XoxnoMarketProvider implements MarketProvider {
 
     return {
       fetchedAt: new Date().toISOString(),
-      markets: markets as any,
+      markets,
     }
   }
 }

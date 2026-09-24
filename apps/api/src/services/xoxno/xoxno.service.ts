@@ -13,6 +13,20 @@ const ASSET_MAP: Record<string, { symbol: string; name: string }> = {
   'CDTKPWPLOURQA2SGTKTUQOWRCBZEORB4BWBOMJ3D3ZTQQSGE5F6JBQLV': { symbol: 'EURC', name: 'Euro Coin' },
 };
 
+const requiredNumber = (value: unknown, field: string): number => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    throw new Error(`XOXNO returned an invalid ${field}; market data cannot be displayed safely.`);
+  }
+  return parsed;
+};
+
+const requiredInteger = (value: unknown, field: string): number => {
+  const parsed = requiredNumber(value, field);
+  if (!Number.isInteger(parsed)) throw new Error(`XOXNO returned an invalid ${field}; an integer is required.`);
+  return parsed;
+};
+
 export interface FormattedMarket {
   assetId: string;
   symbol: string;
@@ -25,32 +39,66 @@ export interface FormattedMarket {
   totalBorrowsUsd: number;
   availableLiquidityUsd: number;
   utilizationRate: number; // Porcentaje de utilización
+  hubId: number;
+  spokeId: number;
+  supplyEnabled: boolean;
 }
 
 export async function getStellarMarkets(): Promise<FormattedMarket[]> {
-  const rawAssets = await sdk.stellarLending.assets();
+  // A reserve is the exact (spoke, hub, asset) coordinate required by XOXNO
+  // supply/withdraw builders. Assets alone are not sufficient to create a safe
+  // transaction, so never invent hub or spoke values in the UI.
+  const [rawReserves, rawAssets] = await Promise.all([
+    sdk.stellarLending.reserves(),
+    sdk.stellarLending.assets(),
+  ]);
+  const assetsByAddress = new Map((rawAssets as any[]).map((asset) => [asset.asset, asset]));
+  const byAsset = new Map<string, any>();
 
-  return rawAssets.map((item: any) => {
+  for (const reserve of rawReserves as any[]) {
+    const current = byAsset.get(reserve.asset);
+    // Prefer the primary market with actual supplied liquidity. This prevents
+    // duplicate UI rows for the same token while retaining a real coordinate.
+    if (!current || Number(reserve.totalDepositsUsd ?? 0) > Number(current.totalDepositsUsd ?? 0)) {
+      byAsset.set(reserve.asset, reserve);
+    }
+  }
+
+  return [...byAsset.values()].map((item) => {
+    const asset = assetsByAddress.get(item.asset);
     const known = ASSET_MAP[item.asset];
-    const supplyApy = (item.supplyApyRange?.[0] || 0) * 100;
-    const borrowApy = (item.borrowApyRange?.[0] || 0) * 100;
-    
-    const deposits = item.totalDepositsUsd || 0;
-    const borrows = item.totalBorrowsUsd || 0;
-    const utilizationRate = deposits > 0 ? (borrows / deposits) * 100 : 0;
+    const supplyApy = requiredNumber(item.supplyApy, 'supply APY') * 100;
+    const borrowApy = requiredNumber(item.borrowApy, 'borrow APY') * 100;
+    const deposits = requiredNumber(item.totalDepositsUsd, 'total deposits');
+    const borrows = requiredNumber(item.totalBorrowsUsd, 'total borrows');
+    const utilizationRate = requiredNumber(item.utilizationRate, 'utilization rate') * 100;
+    const availableLiquidityUsd = requiredNumber(item.availableLiquidityUsd, 'available liquidity');
+    const remainingCapacityUsd = requiredNumber(item.remainingCapacityUsd, 'remaining capacity');
+    const priceUsd = requiredNumber(asset?.price ?? item.priceUsd, 'asset price');
 
     return {
       assetId: item.asset,
       symbol: known?.symbol || `${item.asset.slice(0, 4)}...${item.asset.slice(-4)}`,
       name: known?.name || 'Unknown Token',
-      decimals: item.decimals,
-      priceUsd: item.price,
-      supplyApy: Number(supplyApy.toFixed(2)),
-      borrowApy: Number(borrowApy.toFixed(2)),
+      decimals: requiredInteger(asset?.decimals ?? item.decimals, 'asset decimals'),
+      priceUsd,
+      supplyApy: Number(supplyApy.toFixed(6)),
+      borrowApy: Number(borrowApy.toFixed(6)),
       totalDepositsUsd: Number(deposits.toFixed(2)),
       totalBorrowsUsd: Number(borrows.toFixed(2)),
-      availableLiquidityUsd: Number((item.availableLiquidityUsd || 0).toFixed(2)),
-      utilizationRate: Number(utilizationRate.toFixed(2)),
+      availableLiquidityUsd: Number(availableLiquidityUsd.toFixed(2)),
+      utilizationRate: Number(utilizationRate.toFixed(6)),
+      hubId: requiredInteger(item.hubId, 'hub ID'),
+      spokeId: requiredInteger(item.spokeId, 'spoke ID'),
+      supplyEnabled: remainingCapacityUsd > 0,
     };
   });
+}
+
+export async function getStellarUserPositions(address: string) {
+  return sdk.stellarLending.users.owner(address).positions();
+}
+
+export async function getStellarUserActivity(address: string) {
+  return sdk.stellarLending.users.owner(address).activity({ top: 30 });
 }

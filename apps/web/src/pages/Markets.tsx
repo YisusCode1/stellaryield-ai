@@ -5,7 +5,7 @@ import Icon from '../components/Icon'
 import { ErrorBox, TableSkeleton } from '../components/States'
 import TokenIcon from '../components/TokenIcon'
 import UtilBar from '../components/UtilBar'
-import { fmtPct } from '../data/mock'
+import { fmtPct } from '../lib/format'
 import { useAsync } from '../hooks/useAsync'
 import { getMarkets } from '../services/api'
 
