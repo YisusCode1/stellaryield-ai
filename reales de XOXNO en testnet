@@ -1,0 +1,15 @@
+ .env.example                                    |  16 [32m++[m[31m--[m
+ apps/api/package.json                           |   2 [31m-[m
+ apps/api/src/app.test.ts                        |  29 [32m++++++[m[31m-[m
+ apps/api/src/app.ts                             |  81 [32m++++++[m[31m------------[m
+ apps/api/src/config.test.ts                     |  15 [32m++[m[31m--[m
+ apps/api/src/config.ts                          |  17 [32m++[m[31m--[m
+ apps/api/src/domain/market.ts                   |   7 [32m++[m
+ apps/api/src/http/middleware.ts                 |  21 [32m+++[m[31m--[m
+ apps/api/src/index.ts                           |  33 [31m-------[m
+ apps/api/src/providers/demo-market-provider.ts  |  40 [31m---------[m
+ apps/api/src/providers/xoxno-market-provider.ts |  21 [32m+++[m[31m--[m
+ apps/api/src/server.ts                          |  65 [32m+[m[31m-------------[m
+ apps/api/src/services/xoxno/xoxno.service.ts    |  78 [32m+++++++++++++[m[31m----[m
+ package-lock.json                               | 109 [32m+[m[31m-----------------------[m
+ 14 files changed, 169 insertions(+), 365 deletions(-)

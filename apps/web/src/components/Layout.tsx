@@ -3,7 +3,7 @@ import { NavLink, Outlet } from 'react-router-dom'
 import Icon from './Icon'
 import { Brand, PoweredBy } from './Logo'
 import { useWallet } from '../context/WalletContext'
-import { fmtAddr } from '../data/mock'
+import { fmtAddr } from '../lib/format'
 
 const nav = [
   { to: '/', label: 'Inicio', icon: 'home', end: true },
@@ -18,7 +18,7 @@ const readOpen = () => { try { return localStorage.getItem(KEY) !== 'closed' } c
 
 export default function Layout() {
   // Usamos publicKey del contexto y la asignamos a address
-  const { status, publicKey: address, connect, disconnect } = useWallet()
+  const { status, publicKey: address, connect, disconnect, error } = useWallet()
   const [open, setOpen] = useState(readOpen)
 
   const toggle = () => {
@@ -70,6 +70,7 @@ export default function Layout() {
         </header>
 
         <main className="content">
+          {error && <p className="error wallet-error" role="alert">{error}</p>}
           <Outlet />
         </main>
       </div>

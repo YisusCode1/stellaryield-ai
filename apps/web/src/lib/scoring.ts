@@ -1,4 +1,4 @@
-import type { Market, Risk } from '../data/mock'
+import type { Risk } from './market'
 
 export type Goal = 'yield' | 'liquidity' | 'safe'
 
@@ -7,7 +7,6 @@ export const riskLabels: Record<Risk, string> = { bajo: 'Bajo riesgo', medio: 'R
 
 export interface Factor { key: string; label: string; score: number; detail: string }
 export interface Explanation { total: number; factors: Factor[] }
-export interface RankedMarket { market: Market; explanation: Explanation }
 
 const RISK_SCORE: Record<Risk, number> = { bajo: 95, medio: 60, alto: 25 }
 
@@ -60,11 +59,4 @@ export function explain(m: any, goal: Goal = 'yield'): Explanation {
   const total = clamp(factors.reduce((sum, f) => sum + f.score * (w[f.key] ?? 0), 0))
   
   return { total, factors }
-}
-
-export function rankMarkets(markets: Market[], goal: Goal): RankedMarket[] {
-  if (!Array.isArray(markets)) return []
-  return markets
-    .map((market) => ({ market, explanation: explain(market, goal) }))
-    .sort((a, b) => b.explanation.total - a.explanation.total)
 }

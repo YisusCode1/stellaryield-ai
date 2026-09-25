@@ -1,12 +1,16 @@
 // Capa de servicios: las pantallas SOLO llaman a estas funciones.
-import { Contract, TransactionBuilder, Networks, rpc, Address, nativeToScVal } from '@stellar/stellar-sdk'
+import { TransactionBuilder, rpc } from '@stellar/stellar-sdk'
 import { isConnected, getAddress, isAllowed, signTransaction } from '@stellar/freighter-api'
-import { activity, fmtUsd, markets, portfolio, positions, tokenPriceUsd, wallet } from '../data/mock'
-import type { Market } from '../data/mock'
-import { goalLabels, rankMarkets } from '../lib/scoring'
-import type { Goal, RankedMarket } from '../lib/scoring'
+import {
+  buildStellarSupplyTx,
+  buildStellarWithdrawTx,
+  prepareStellarBuiltTx,
+  STELLAR_NETWORKS,
+} from '@xoxno/sdk-js/stellar-lending'
+import { fmtUsd } from '../lib/format'
+import type { Market } from '../lib/market'
+import type { Goal } from '../lib/scoring'
 
-export const USE_MOCKS = import.meta.env.VITE_USE_MOCKS !== 'false'
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000'
 
 /* ---------- Tipos ---------- */
@@ -17,27 +21,62 @@ export interface WalletInfo {
   totalUsdc: number
   balances: { symbol: string; amount: number; usd: number }[]
 }
-export interface Position { symbol: string; type: string; amount: number; usd: number; apy: number; gain: number }
+export interface Position {
+  symbol: string
+  type: string
+  amount: number
+  usd: number
+  apy: number
+  yearlyEstimateUsd: number
+  assetAddress: string
+  hubId: number
+  spokeId: number
+  decimals: number
+  accountNonce: string
+}
 export interface PortfolioInfo {
   totalUsd: number
-  totalUsdc: number
-  changePct: number
-  series: number[]
   yearlyEstimateUsd: number
   yearlyApy: number
   positions: Position[]
 }
 export interface ActivityItem { id: number; type: string; symbol: string; amount: number; date: string; status: string }
-export interface Recommendation { items: RankedMarket[]; yearlyUsd: number }
-export interface ChatReply { text: string; symbol?: string }
+export interface AdvisorRecommendation {
+  status: 'recommended' | 'not_recommended'
+  action?: 'supply'
+  asset?: string
+  amountUsd?: number
+  currentSupplyApyPercent?: number
+  risk?: 'Bajo' | 'Moderado' | 'Alto'
+  confidence?: 'high' | 'medium' | 'low'
+  reasons: string[]
+  cautions: string[]
+  marketUpdatedAt?: string
+  generatedAt: string
+  disclaimer: string
+}
 
-export interface TxInput { kind: 'supply' | 'borrow'; symbol: string; amount: number }
+export interface Recommendation {
+  recommendation: AdvisorRecommendation
+  market?: Market
+  yearlyUsd?: number
+}
+
+export interface TxInput {
+  kind: 'supply' | 'withdraw'
+  symbol: string
+  amount: number
+  assetAddress: string
+  hubId: number
+  spokeId: number
+  decimals: number
+  accountNonce?: string
+  withdrawAll?: boolean
+}
 export type TxStage = 'signing' | 'confirming'
-export interface TxResult { hash: string; demo?: boolean }
+export interface TxResult { hash: string }
 
 /* ---------- Utilidades ---------- */
-const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
-
 async function http<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, { headers: { 'Content-Type': 'application/json' }, ...init })
   if (!res.ok) throw new Error(`No se pudo completar la solicitud (${res.status}).`)
@@ -45,51 +84,39 @@ async function http<T>(path: string, init?: RequestInit): Promise<T> {
 }
 const post = (body: unknown): RequestInit => ({ method: 'POST', body: JSON.stringify(body) })
 
-async function mock<T>(data: T, ms = 700): Promise<T> {
-  await wait(ms)
-  return structuredClone(data)
-}
-
 /* ---------- Lecturas de Mercado ---------- */
 export const getMarkets = async (): Promise<Market[]> => {
-  if (USE_MOCKS) return mock(markets)
-  try {
-    const rawMarkets = await http<any[]>('/markets')
+  const rawMarkets = await http<any[]>('/markets')
 
-    return rawMarkets.map((m) => {
-      // Intenta leer las métricas desde cualquier posible variante que devuelva el backend/indexador
-      const rawSupply = Number(
-        m.supplyApy ?? m.supply_apy ?? m.supplyRate ?? m.supply_rate ?? m.apy ?? 0
-      )
-      const rawBorrow = Number(
-        m.borrowApy ?? m.borrow_apy ?? m.borrowRate ?? m.borrow_rate ?? 0
-      )
-      const rawUtil = Number(
-        m.utilization ?? m.utilization_rate ?? m.utilizationRate ?? 0
-      )
+  return rawMarkets.map((m) => {
+    const supplyApy = Number(m.supplyApyPercent)
+    const borrowApy = Number(m.borrowApyPercent)
+    const utilization = Number(m.utilizationPercent)
+    const liquidityUsd = Number(m.availableLiquidityUsd)
+    const symbol = typeof m.asset === 'string' ? m.asset : ''
+    const assetAddress = typeof m.assetAddress === 'string' ? m.assetAddress : ''
 
-      // Si el contrato de Testnet reporta 0 utilización/depósitos, asignamos un porcentaje base visual
-      const supplyApy = rawSupply > 0 ? rawSupply : (m.symbol === 'USDC' ? 8.5 : m.symbol === 'XLM' ? 5.2 : 4.0)
-      const borrowApy = rawBorrow > 0 ? rawBorrow : (m.symbol === 'USDC' ? 10.5 : m.symbol === 'XLM' ? 7.1 : 6.0)
-      const utilization = rawUtil > 0 ? rawUtil : 45.0
+    if (!symbol || !assetAddress || !Number.isInteger(m.hubId) || !Number.isInteger(m.spokeId)) {
+      throw new Error('XOXNO devolvió un mercado incompleto; no se puede preparar una transacción segura.')
+    }
 
-      return {
-        ...m,
-        id: m.id,
-        symbol: m.symbol ?? m.asset ?? 'UNKNOWN',
-        supplyApy,
-        borrowApy,
-        utilization,
-        liquidity: m.liquidity ?? m.total_liquidity ?? '$100,000',
-        liquidityUsd: Number(m.liquidityUsd ?? m.liquidity_usd ?? 100000),
-        network: m.chain ? m.chain.toLowerCase() : 'testnet',
-        risk: m.risk ?? 'bajo',
-      }
-    })
-  } catch (err) {
-    console.warn('API /markets dio error, usando fallback local:', err)
-    return markets
-  }
+    return {
+      symbol,
+      supplyApy: requireFinite(supplyApy, 'supply APY'),
+      borrowApy: requireFinite(borrowApy, 'borrow APY'),
+      utilization: requireFinite(utilization, 'utilización'),
+      liquidity: fmtUsd(requireFinite(liquidityUsd, 'liquidez')),
+      liquidityUsd: requireFinite(liquidityUsd, 'liquidez'),
+      network: 'Stellar Testnet',
+      risk: utilization >= 90 ? 'alto' : utilization >= 70 ? 'medio' : 'bajo',
+      assetAddress,
+      hubId: m.hubId,
+      spokeId: m.spokeId,
+      decimals: requireInteger(m.decimals, 'decimales'),
+      priceUsd: requireFinite(Number(m.priceUsd), 'precio USD'),
+      supplyEnabled: m.supplyEnabled === true,
+    }
+  })
 }
 
 export async function getMarket(symbol: string): Promise<Market | undefined> {
@@ -98,231 +125,207 @@ export async function getMarket(symbol: string): Promise<Market | undefined> {
 }
 
 export async function getWallet(publicKey?: string): Promise<WalletInfo> {
-  if (USE_MOCKS) {
-    return mock(wallet)
-  }
-
   if (!publicKey) {
     return { address: '', network: 'Testnet', totalUsd: 0, totalUsdc: 0, balances: [] }
   }
 
-  try {
-    const res = await fetch(`https://horizon-testnet.stellar.org/accounts/${publicKey}`)
-    if (!res.ok) throw new Error('Cuenta no encontrada o sin saldo en Testnet.')
-    
-    const data = await res.json()
-    let totalUsd = 0
-    let totalUsdc = 0
+  const [res, currentMarkets] = await Promise.all([
+    fetch(`https://horizon-testnet.stellar.org/accounts/${publicKey}`),
+    getMarkets(),
+  ])
+  if (!res.ok) throw new Error('Cuenta no encontrada o sin saldo en Stellar Testnet.')
 
-    const balances = data.balances.map((b: any) => {
-      const symbol = b.asset_type === 'native' ? 'XLM' : b.asset_code
-      const amount = parseFloat(b.balance)
-      const usd = symbol === 'USDC' ? amount : amount * 0.12
-      totalUsd += usd
-      if (symbol === 'USDC') totalUsdc += amount
-
-      return { symbol, amount, usd }
-    })
-
-    return { address: publicKey, network: 'Testnet', totalUsd, totalUsdc, balances }
-  } catch (err) {
-    console.warn('No se pudieron obtener saldos reales de Horizon, retornando balances vacíos:', err)
-    return {
-      address: publicKey,
-      network: 'Testnet',
-      totalUsd: 0,
-      totalUsdc: 0,
-      balances: [
-        { symbol: 'XLM', amount: 0, usd: 0 },
-        { symbol: 'USDC', amount: 0, usd: 0 },
-      ],
-    }
-  }
+  const data = await res.json()
+  const priceBySymbol = new Map(currentMarkets.map((market) => [market.symbol, market.priceUsd]))
+  let totalUsd = 0
+  let totalUsdc = 0
+  const balances = data.balances.map((balance: any) => {
+    const symbol = balance.asset_type === 'native' ? 'XLM' : balance.asset_code
+    const amount = Number.parseFloat(balance.balance)
+    if (!symbol || !Number.isFinite(amount)) throw new Error('Horizon devolvió un balance inválido.')
+    const priceUsd = priceBySymbol.get(symbol)
+    const usd = priceUsd === undefined ? 0 : amount * priceUsd
+    totalUsd += usd
+    if (symbol === 'USDC') totalUsdc += amount
+    return { symbol, amount, usd }
+  })
+  return { address: publicKey, network: 'Testnet', totalUsd, totalUsdc, balances }
 }
 
 export async function getPortfolio(publicKey?: string): Promise<PortfolioInfo> {
-  if (USE_MOCKS) {
-    return mock({ ...portfolio, positions, totalUsd: wallet.totalUsd, totalUsdc: wallet.totalUsdc })
-  }
-
   if (!publicKey) {
     return {
       totalUsd: 0,
-      totalUsdc: 0,
-      changePct: 0,
-      series: [0, 0, 0, 0, 0],
       yearlyEstimateUsd: 0,
       yearlyApy: 0,
       positions: [],
     }
   }
 
-  const walletData = await getWallet(publicKey)
+  const [rawPositions, currentMarkets] = await Promise.all([
+    http<{ positions?: any[] }>(`/positions?address=${encodeURIComponent(publicKey)}`),
+    getMarkets(),
+  ])
 
-  const pos: Position[] = walletData.balances.map((b) => ({
-    symbol: b.symbol,
-    type: 'Supply',
-    amount: b.amount,
-    usd: b.usd,
-    apy: b.symbol === 'USDC' ? 8.5 : 5.2,
-    gain: b.usd * 0.05,
-  }))
+  const marketByCoordinate = new Map(
+    currentMarkets.map((market) => [`${market.spokeId}:${market.hubId}:${market.assetAddress}`, market])
+  )
+  const pos: Position[] = (rawPositions.positions ?? [])
+    .filter((position) => BigInt(position.supplyAmount ?? '0') > 0n)
+    .map((position) => {
+      const market = marketByCoordinate.get(`${position.spokeId}:${position.hubId}:${position.asset}`)
+      const amount = rayToNumber(position.supplyAmount ?? '0')
+      const priceUsd = market?.priceUsd ?? 0
+      const usd = amount * priceUsd
+      const apy = market?.supplyApy ?? 0
+      return {
+        symbol: market?.symbol ?? shortAsset(position.asset),
+        type: 'Supply en XOXNO',
+        amount,
+        usd,
+        apy,
+        yearlyEstimateUsd: (usd * apy) / 100,
+        assetAddress: position.asset,
+        hubId: position.hubId,
+        spokeId: position.spokeId,
+        decimals: market?.decimals ?? 7,
+        accountNonce: position.accountId,
+      }
+    })
+
+  const totalUsd = pos.reduce((sum, position) => sum + position.usd, 0)
+  const yearlyEstimateUsd = pos.reduce((sum, position) => sum + position.yearlyEstimateUsd, 0)
 
   return {
-    totalUsd: walletData.totalUsd,
-    totalUsdc: walletData.totalUsdc,
-    changePct: 0,
-    series: [walletData.totalUsd, walletData.totalUsd],
-    yearlyEstimateUsd: walletData.totalUsd * 0.07,
-    yearlyApy: 7.0,
+    totalUsd,
+    yearlyEstimateUsd,
+    yearlyApy: totalUsd > 0 ? (yearlyEstimateUsd / totalUsd) * 100 : 0,
     positions: pos,
   }
 }
 
 export async function getActivity(publicKey?: string): Promise<ActivityItem[]> {
-  if (USE_MOCKS) {
-    return mock(activity)
-  }
-
   if (!publicKey) return []
 
-  try {
-    // Consultamos el historial de transacciones reales de la cuenta
-    const horizonRes = await fetch(
-      `https://horizon-testnet.stellar.org/accounts/${publicKey}/transactions?limit=10&order=desc`
-    )
-    if (!horizonRes.ok) return []
-
-    const data = await horizonRes.json()
-    const records = data._embedded?.records ?? []
-
-    return records.map((tx: any, idx: number) => {
-      return {
-        id: idx + 1,
-        type: 'Supply', // Transacción de depósito/invocación de Soroban
-        symbol: 'USDC',
-        amount: 20, // O extraer del memo/eventos si corresponde
-        date: new Date(tx.created_at).toLocaleDateString(),
-        status: tx.successful ? 'Completado' : 'Fallido',
-      }
-    })
-  } catch (err) {
-    console.error('Error al obtener la actividad:', err)
-    return []
-  }
+  const items = await http<any[]>(`/activity?address=${encodeURIComponent(publicKey)}`)
+  return items.map((item, index) => ({
+    id: Number(item.seq ?? index + 1),
+    type: String(item.action ?? 'Operación'),
+    symbol: String(item.symbol ?? shortAsset(String(item.token ?? ''))),
+    amount: Number(item.amountShort ?? 0),
+    date: new Date(item.timestamp).toLocaleDateString(),
+    status: String(item.status ?? 'Registrada'),
+  }))
 }
 
 export async function getRecommendation(goal: Goal, amount: number, token: string): Promise<Recommendation> {
-  if (!USE_MOCKS) {
-    try {
-      return await http<Recommendation>('/recommendation', post({ goal, amount, token }))
-    } catch (err) {
-      console.warn('API /recommendation falló (404), generando respuesta local:', err)
-    }
-  }
-  await wait(1200)
-  const items = rankMarkets(markets, goal).slice(0, 3)
-  const usd = amount * (tokenPriceUsd[token] ?? 1)
-  return { items, yearlyUsd: (usd * items[0].market.supplyApy) / 100 }
-}
-
-/* ---------- Chat del Asesor IA ---------- */
-export async function sendChat(message: string): Promise<ChatReply> {
-  if (!USE_MOCKS) {
-    try {
-      return await http<ChatReply>('/chat', post({ message }))
-    } catch (err) {
-      console.warn('API /chat no responde, usando respuesta simulada:', err)
-    }
-  }
-  await wait(900)
-  const t = message.toLowerCase()
-
-  if (/\bapy\b/.test(t) && /(qu[eé] es|significa|explica)/.test(t)) {
-    return { text: 'El APY es el rendimiento anual estimado de tu dinero. Si depositas 100 con un APY de 5%, en un año ganarías cerca de 5. Puede variar con el mercado.' }
-  }
-  if (/utiliz/.test(t)) {
-    return { text: 'La utilización es el porcentaje del dinero depositado que ya está prestado. Si es muy alta, puede costar más retirar; si es muy baja, el rendimiento suele ser menor.' }
-  }
-  if (/^\s*[¡¿]?\s*(hola|buenas|hey)/.test(t)) {
-    return { text: '¡Hola! Cuéntame cuánto quieres invertir y qué buscas: rendimiento, liquidez o bajo riesgo.' }
-  }
-
-  const goal: Goal = /riesg|segur|estable|conserv|tranquil/.test(t)
-    ? 'safe'
-    : /liquid|retir|dispon|r[aá]pid/.test(t)
-      ? 'liquidity'
-      : 'yield'
-  const { market } = rankMarkets(markets, goal)[0]
-  const found = t.match(/\d+(?:[.,]\d+)?/)
-  const amount = found ? Number(found[0].replace(',', '.')) : 0
-  const extra = amount > 0 ? ` Con ${amount} ganarías cerca de ${fmtUsd((amount * market.supplyApy) / 100)} al año.` : ''
+  const currentMarkets = await getMarkets()
+  const preferredMarket = currentMarkets.find((market) => market.symbol.toLowerCase() === token.toLowerCase())
+  if (!preferredMarket) throw new Error(`No hay precio verificable de XOXNO para ${token}.`)
+  const riskProfile = goal === 'safe' ? 'conservative' : goal === 'liquidity' ? 'moderate' : 'aggressive'
+  const response = await http<{ data: { recommendation: AdvisorRecommendation } }>('/api/v1/advisor/recommendations', post({
+    amountUsd: amount * preferredMarket.priceUsd,
+    riskProfile,
+    preferredAsset: preferredMarket.symbol,
+  }))
+  const recommendation = response.data.recommendation
+  const market = recommendation.asset === undefined
+    ? undefined
+    : currentMarkets.find((candidate) => candidate.symbol.toLowerCase() === recommendation.asset!.toLowerCase())
   return {
-    text: `Para ${goalLabels[goal]}, mi mejor opción es Supply ${market.symbol}: rinde ${market.supplyApy.toFixed(2)}% anual, tiene ${market.liquidity} de liquidez y riesgo ${market.risk}.${extra}`,
-    symbol: market.symbol,
+    recommendation,
+    market,
+    yearlyUsd: recommendation.amountUsd !== undefined && recommendation.currentSupplyApyPercent !== undefined
+      ? (recommendation.amountUsd * recommendation.currentSupplyApyPercent) / 100
+      : undefined,
   }
 }
 
 /* ---------- Web3 & Soroban ---------- */
 export async function connectWallet(): Promise<{ address: string }> {
-  if (!USE_MOCKS) {
-    const connected = await isConnected()
-    if (!connected) {
-      throw new Error('La extensión de Freighter no está instalada.')
-    }
-    const allowed = await isAllowed()
-    const addressResult = await getAddress()
-    const address = typeof addressResult === 'string' ? addressResult : addressResult?.address
-
-    if (!allowed || !address) {
-      throw new Error('Permiso denegado por la billetera Freighter.')
-    }
-    return { address }
-  }
-
-  await wait(900)
-  return { address: wallet.address }
+  const connected = await isConnected()
+  if (!connected) throw new Error('La extensión de Freighter no está instalada.')
+  const allowed = await isAllowed()
+  const addressResult = await getAddress()
+  const address = typeof addressResult === 'string' ? addressResult : addressResult?.address
+  if (!allowed || !address) throw new Error('Permiso denegado por la billetera Freighter.')
+  return { address }
 }
 
-const randomHash = () => Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join('')
+const shortAsset = (asset: string) => asset.length > 12 ? `${asset.slice(0, 4)}…${asset.slice(-4)}` : asset
+
+const rayToNumber = (value: string): number => {
+  const ray = BigInt(value)
+  const denominator = 10n ** 27n
+  const whole = ray / denominator
+  const fraction = ray % denominator
+  // Keep a bounded precision when crossing the BigInt/Number boundary for UI.
+  return Number(whole) + Number(fraction / (10n ** 15n)) / 1_000_000_000_000
+}
+
+const toBaseUnits = (amount: number, decimals: number): string => {
+  if (!Number.isInteger(decimals) || decimals < 0 || decimals > 18) throw new Error('El activo tiene una precisión no compatible.')
+  if (!Number.isFinite(amount) || amount <= 0 || amount > 1_000_000) throw new Error('El monto no es válido.')
+  const [whole, fraction = ''] = amount.toFixed(decimals).split('.')
+  return `${whole}${fraction.padEnd(decimals, '0')}`.replace(/^0+(?=\d)/, '')
+}
+
+const requireFinite = (value: number, field: string): number => {
+  if (!Number.isFinite(value)) throw new Error(`XOXNO devolvió ${field} inválido.`)
+  return value
+}
+
+const requireInteger = (value: unknown, field: string): number => {
+  const parsed = Number(value)
+  if (!Number.isInteger(parsed) || parsed < 0) throw new Error(`XOXNO devolvió ${field} inválidos.`)
+  return parsed
+}
 
 export async function submitTransaction(input: TxInput, onStage: (s: TxStage) => void): Promise<TxResult> {
-  if (!USE_MOCKS) {
-    try {
+  try {
+      if (!/^C[A-Z2-7]{55}$/.test(input.assetAddress)) throw new Error('El activo de XOXNO no es un contrato Soroban válido.')
+      if (!Number.isInteger(input.hubId) || input.hubId <= 0 || !Number.isInteger(input.spokeId) || input.spokeId <= 0) {
+        throw new Error('El mercado de XOXNO no tiene una coordenada válida.')
+      }
+      if (input.kind === 'withdraw' && !input.accountNonce) throw new Error('No se encontró la cuenta de lending para el retiro.')
+
       onStage('signing')
 
-      const networkPassphrase = import.meta.env.VITE_STELLAR_NETWORK_PASSPHRASE || Networks.TESTNET
-      const userAddress = (await getAddress()).address
-      const server = new rpc.Server(import.meta.env.VITE_STELLAR_RPC_URL || 'https://soroban-testnet.stellar.org:443')
+      const deployment = STELLAR_NETWORKS.stellarTestnet
+      const networkPassphrase = deployment.passphrase
+      const addressResult = await getAddress()
+      const userAddress = typeof addressResult === 'string' ? addressResult : addressResult?.address
+      if (!userAddress) throw new Error('No se pudo obtener una dirección válida de Freighter.')
+
+      const server = new rpc.Server(deployment.sorobanRpcUrl)
       const account = await server.getAccount(userAddress)
-
-      const contract = new Contract(import.meta.env.VITE_VAULT_CONTRACT_ID)
-
-      // 1. Usa el Contract ID real del TOKEN en Soroban Testnet
-      const tokenAddress = import.meta.env.VITE_USDC_CONTRACT_ID || 'CBIELT6Y34TTC43C5IFA3O2M2K4J5R4R3A6L7O5P4Q3R2S1T0U9V8W7X'
-
-      // Convertir el monto a i128 considerando 7 decimales de Stellar
-      const amountInStroops = BigInt(Math.floor(input.amount * 10_000_000))
-      console.log('Monto original (UI):', input.amount)
-      console.log('Monto convertido (Stroops):', amountInStroops.toString())
-
-      const args = [
-        new Address(userAddress).toScVal(),
-        new Address(tokenAddress).toScVal(),
-        nativeToScVal(amountInStroops, { type: 'i128' }),
-      ]
-
-      const tx = new TransactionBuilder(account, {
-        fee: '10000',
-        networkPassphrase,
+      const builderOptions = {
+        network: 'testnet' as const,
+        caller: userAddress,
+        sourceSequence: account.sequenceNumber(),
+        controllerAddress: deployment.lendingController,
+      }
+      const amount = input.kind === 'withdraw' && input.withdrawAll ? '0' : toBaseUnits(input.amount, input.decimals)
+      const built = input.kind === 'supply'
+        ? buildStellarSupplyTx(builderOptions, {
+            accountNonce: 0,
+            spokeId: input.spokeId,
+            hubId: input.hubId,
+            asset: input.assetAddress,
+            amount,
+          })
+        : buildStellarWithdrawTx(builderOptions, {
+            accountNonce: input.accountNonce!,
+            hubId: input.hubId,
+            asset: input.assetAddress,
+            amount,
+          })
+      const preparedXdr = await prepareStellarBuiltTx(server, built, {
+        network: 'testnet',
+        invokedContractId: deployment.lendingController,
       })
-        .addOperation(contract.call('deposit', ...args))
-        .setTimeout(30)
-        .build()
 
-      const preparedTx = await server.prepareTransaction(tx)
-
-      const signResult = await signTransaction(preparedTx.toXDR(), {
+      const signResult = await signTransaction(preparedXdr, {
         networkPassphrase,
       })
 
@@ -332,6 +335,7 @@ export async function submitTransaction(input: TxInput, onStage: (s: TxStage) =>
       onStage('confirming')
 
       // Reconstruimos el objeto Transaction desde la cadena XDR
+      if (typeof signedXdr !== 'string') throw new Error('Freighter no devolvió una transacción firmada válida.')
       const signedTransaction = TransactionBuilder.fromXDR(signedXdr, networkPassphrase)
 
       // Se envía el objeto Transaction reconstruido a la RPC
@@ -341,28 +345,28 @@ export async function submitTransaction(input: TxInput, onStage: (s: TxStage) =>
         throw new Error(`Error enviando la transacción: ${JSON.stringify(sendResult)}`)
       }
 
-      // 2. Polling para confirmar la inclusión en el ledger
+      // Polling bounded to avoid leaving the UI in a permanent confirming state.
       let statusResponse = await server.getTransaction(sendResult.hash)
-      while (statusResponse.status === 'NOT_FOUND') {
+      let attempts = 0
+      const maxAttempts = 30
+      while (statusResponse.status === 'NOT_FOUND' && attempts < maxAttempts) {
         await new Promise((resolve) => setTimeout(resolve, 1000))
         statusResponse = await server.getTransaction(sendResult.hash)
+        attempts += 1
+      }
+
+      if (statusResponse.status === 'NOT_FOUND') {
+        throw new Error('La transacción sigue pendiente. Consulta el hash en el explorador antes de reintentar.')
       }
 
       if (statusResponse.status === 'SUCCESS') {
-        return { hash: sendResult.hash, demo: false }
+        return { hash: sendResult.hash }
       } else {
         throw new Error(`Transacción fallida en la red con estado: ${statusResponse.status}`)
       }
 
-    } catch (err: any) {
-      console.error('Error en transacción de Soroban:', err)
-      throw new Error(`Error en la transacción real: ${err.message || 'Transacción fallida'}`)
-    }
+  } catch (err: any) {
+    console.error('Error en transacción de Soroban:', err)
+    throw new Error(`Error en la transacción real: ${err.message || 'Transacción fallida'}`)
   }
-
-  onStage('signing')
-  await wait(1600)
-  onStage('confirming')
-  await wait(1800)
-  return { hash: randomHash(), demo: true }
 }

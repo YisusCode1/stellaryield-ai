@@ -3,18 +3,32 @@ import test from 'node:test'
 
 import { createApp } from './app.js'
 import type { AppConfig } from './config.js'
-import { DemoMarketProvider } from './providers/demo-market-provider.js'
+import type { MarketProvider } from './providers/market-provider.js'
 
 const config: AppConfig = {
   environment: 'test',
   port: 3000,
   network: 'testnet',
   allowedOrigins: ['http://localhost:5173'],
-  marketSource: 'demo',
+  marketSource: 'xoxno',
+}
+
+// Deterministic fixture used only by unit tests; production has no demo provider.
+const testMarketProvider: MarketProvider = {
+  async getMarketSnapshot() {
+    const updatedAt = new Date().toISOString()
+    return {
+      fetchedAt: updatedAt,
+      markets: [{
+        asset: 'USDC', assetAddress: 'CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75', hubId: 1, spokeId: 1, decimals: 7, priceUsd: 1, supplyEnabled: true,
+        supplyApyPercent: 6.42, borrowApyPercent: 9.1, availableLiquidityUsd: 25_000, totalSupplyUsd: 100_000, totalBorrowUsd: 75_000, utilizationPercent: 75, network: 'testnet', updatedAt,
+      }],
+    }
+  },
 }
 
 const withServer = async (run: (baseUrl: string) => Promise<void>): Promise<void> => {
-  const server = createApp(config, new DemoMarketProvider('testnet')).listen(0, '127.0.0.1')
+  const server = createApp(config, testMarketProvider).listen(0, '127.0.0.1')
   await new Promise<void>((resolve) => server.once('listening', resolve))
   const address = server.address()
   if (address === null || typeof address === 'string') throw new Error('Test server address is unavailable.')
@@ -43,6 +57,15 @@ test('serves an explainable recommendation with defensive response headers', asy
     assert.equal(response.headers.get('x-powered-by'), null)
     assert.equal(body.data.recommendation.status, 'recommended')
     assert.equal(body.data.recommendation.asset, 'USDC')
+  })
+})
+
+test('rejects invalid wallet addresses before querying XOXNO positions or activity', async () => {
+  await withServer(async (baseUrl) => {
+    for (const path of ['/positions?address=not-a-wallet', '/activity?address=not-a-wallet']) {
+      const response = await fetch(`${baseUrl}${path}`)
+      assert.equal(response.status, 400)
+    }
   })
 })
 

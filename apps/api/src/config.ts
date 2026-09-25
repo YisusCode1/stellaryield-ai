@@ -5,7 +5,7 @@ import { config as loadDotenv } from 'dotenv'
 
 import type { Network } from './domain/market.js'
 
-const DEFAULT_ALLOWED_ORIGIN = 'http://localhost:5173'
+const DEFAULT_ALLOWED_ORIGINS = ['http://localhost:5173', 'http://127.0.0.1:5173'] as const
 const sourceDirectory = dirname(fileURLToPath(import.meta.url))
 
 // Support both a workspace-local file and the documented repository-root .env.
@@ -15,8 +15,7 @@ loadDotenv({ path: resolve(sourceDirectory, '../../../.env'), quiet: true })
 
 const readNetwork = (value: string | undefined): Network => {
   if (value === undefined || value === 'testnet') return 'testnet'
-  if (value === 'mainnet') return 'mainnet'
-  throw new Error('STELLAR_NETWORK must be "testnet" or "mainnet".')
+  throw new Error('STELLAR_NETWORK must be "testnet". Mainnet is intentionally disabled.')
 }
 
 const readPort = (value: string | undefined): number => {
@@ -29,7 +28,7 @@ const readPort = (value: string | undefined): number => {
 }
 
 const readOrigins = (value: string | undefined): readonly string[] => {
-  const origins = (value ?? DEFAULT_ALLOWED_ORIGIN)
+  const origins = (value ?? DEFAULT_ALLOWED_ORIGINS.join(','))
     .split(',')
     .map((origin) => origin.trim())
     .filter(Boolean)
@@ -45,10 +44,9 @@ const readOrigins = (value: string | undefined): readonly string[] => {
   return Object.freeze([...new Set(origins)])
 }
 
-const readMarketSource = (value: string | undefined): 'demo' | 'xoxno' => {
+const readMarketSource = (value: string | undefined): 'xoxno' => {
   if (value === undefined || value === 'xoxno') return 'xoxno'
-  if (value === 'demo') return 'demo'
-  throw new Error('ADVISOR_MARKET_SOURCE must be "demo" or "xoxno".')
+  throw new Error('ADVISOR_MARKET_SOURCE must be "xoxno". Demo markets are disabled.')
 }
 
 export interface AppConfig {
@@ -56,8 +54,7 @@ export interface AppConfig {
   port: number
   network: Network
   allowedOrigins: readonly string[]
-  marketSource: 'demo' | 'xoxno'
-  vaultContractId?: string
+  marketSource: 'xoxno'
 }
 
 export const loadConfig = (env: NodeJS.ProcessEnv = process.env): AppConfig => {
@@ -74,9 +71,6 @@ export const loadConfig = (env: NodeJS.ProcessEnv = process.env): AppConfig => {
   const allowedOrigins = readOrigins(env.ALLOWED_ORIGINS)
   const marketSource = readMarketSource(env.ADVISOR_MARKET_SOURCE)
   if (environment === 'production') {
-    if (marketSource === 'demo') {
-      throw new Error('ADVISOR_MARKET_SOURCE=demo is not allowed in production.')
-    }
     if (allowedOrigins.some((origin) => new URL(origin).protocol !== 'https:')) {
       throw new Error('ALLOWED_ORIGINS must use HTTPS in production.')
     }

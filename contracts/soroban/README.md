@@ -1,23 +1,35 @@
-# Soroban Project
+# StellarYield Vault (Soroban)
 
-## Project Structure
+`stellaryield-vault` is a Testnet demo Vault. It tracks balances by `(user,
+token)` and only allows a user to withdraw their own credited balance. It is
+**not** an XOXNO supply adapter: a deposit transfers tokens to this Vault, not
+to XOXNO.
 
-This repository uses the recommended structure for a Soroban project:
+The web application now uses XOXNO's official Testnet lending contracts for
+Supply and Withdraw. This Vault is therefore not required for the XOXNO demo
+and must not be configured as the destination for that flow.
 
-```text
-.
-├── contracts
-│   └── hello_world
-│       ├── src
-│       │   ├── lib.rs
-│       │   └── test.rs
-│       └── Cargo.toml
-├── Cargo.toml
-├── AGENTS.md
-└── README.md
+## Safety model
+
+- The deployment admin initializes the treasury and a fee capped at 10%.
+- Users cannot choose the treasury or fee when withdrawing.
+- Deposits and withdrawals require authorization and a positive amount.
+- A withdrawal cannot exceed the caller's deposited balance for that token.
+
+## Test and deploy
+
+From this directory, after installing Rust 1.84+ and the Stellar CLI:
+
+```bash
+cargo test -p stellaryield-vault
+stellar contract build --package stellaryield-vault
 ```
 
-- New Soroban contracts can be put in `contracts`, each in their own directory. There is already a `hello_world` contract in there to get you started.
-- If you initialized this project with any other example contracts via `--with-example`, those contracts will be in the `contracts` directory as well.
-- Contracts should have their own `Cargo.toml` files that rely on the top-level `Cargo.toml` workspace for their dependencies.
-- Frontend libraries can be added to the top-level directory as well. If you initialized this project with a frontend template via `--frontend-template` you will have those files already included.
+This security change modifies the contract ABI and storage layout. Deploy a
+**new** Testnet contract and call `initialize(admin, treasury, fee_bps)` before
+accepting faucet deposits. Do not send funds to the previous Vault deployment.
+
+The StellarYield web app deliberately does not read a Vault contract ID and
+cannot route funds to this contract. Keeping its address in environment files
+does not enable it; any independent use requires a separate audited client and
+an explicit deployment process.

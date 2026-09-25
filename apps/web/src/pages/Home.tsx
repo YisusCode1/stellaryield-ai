@@ -7,11 +7,9 @@ import Icon from '../components/Icon'
 import { ErrorBox, Skeleton, TableSkeleton } from '../components/States'
 import TokenIcon from '../components/TokenIcon'
 import UtilBar from '../components/UtilBar'
-import WhyPanel from '../components/WhyPanel'
 import { useWallet } from '../context/WalletContext'
-import { fmtNum, fmtPct, fmtUsd } from '../data/mock'
+import { fmtNum, fmtPct, fmtUsd } from '../lib/format'
 import { useAsync } from '../hooks/useAsync'
-import { riskLabels } from '../lib/scoring'
 import { getMarkets, getRecommendation, getWallet } from '../services/api'
 
 function BalanceCard() {
@@ -84,26 +82,35 @@ function RecommendationCard() {
     )
   }
 
-  const { market, explanation } = data.items[0]
+  const { recommendation, market } = data
+  if (recommendation.status !== 'recommended' || !market) {
+    return (
+      <section className="card rec-card">
+        <div className="rec-head"><span><Icon name="spark" size={16} /> Recomendación de la IA</span></div>
+        <p className="muted">No hay una recomendación verificable con las métricas actuales de XOXNO.</p>
+        <Link className="btn btn-ghost" to="/advisor">Revisar con el asesor</Link>
+      </section>
+    )
+  }
   return (
     <section className="card rec-card">
       <div className="rec-head">
         <span><Icon name="spark" size={16} /> Recomendación de la IA</span>
-        <span className="badge badge-green">{riskLabels[market.risk]}</span>
+        <span className="badge badge-green">{recommendation.risk ?? 'Riesgo no disponible'}</span>
       </div>
       <div className="rec-title">
         <TokenIcon symbol={market.symbol} size={32} />
         <strong>Supply {market.symbol} en XOXNO</strong>
       </div>
-      <p className="muted">Opción estable con buen rendimiento y bajo riesgo en el mercado de {market.symbol}.</p>
+      <p className="muted">{recommendation.reasons[0] ?? 'Basada en las métricas actuales del mercado.'}</p>
       <button className="link link-btn" type="button" aria-expanded={why} onClick={() => setWhy((v) => !v)}>
         ¿Por qué esta opción? <Icon name="chevron" size={14} />
       </button>
-      {why && <WhyPanel explanation={explanation} />}
+      {why && <ul>{recommendation.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>}
       <div className="rec-foot">
         <div>
           <small className="muted">APY estimado</small>
-          <div className="apy">{fmtPct(market.supplyApy)}</div>
+          <div className="apy">{fmtPct(recommendation.currentSupplyApyPercent)}</div>
         </div>
         <Link className="btn btn-primary" to={`/markets/${market.symbol}`}>
           Ver detalles <Icon name="arrow" size={16} />

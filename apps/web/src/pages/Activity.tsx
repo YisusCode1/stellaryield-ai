@@ -3,7 +3,7 @@ import ConnectGate from '../components/ConnectGate'
 import { ErrorBox, TableSkeleton } from '../components/States'
 import TokenIcon from '../components/TokenIcon'
 import { useWallet } from '../context/WalletContext' // 1. Importar useWallet
-import { fmtNum } from '../data/mock'
+import { fmtNum } from '../lib/format'
 import { useAsync } from '../hooks/useAsync'
 import { getActivity } from '../services/api'
 
