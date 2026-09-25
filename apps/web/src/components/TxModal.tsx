@@ -16,12 +16,22 @@ export default function TxModal({ input, apy, onClose, onSuccess }: { input: TxI
   const [error, setError] = useState('')
   const mainBtn = useRef<HTMLButtonElement>(null)
 
+  // Guard SÍNCRONO contra doble envío. setState de React es asíncrono, así que
+  // un doble click (o doble evento de click del navegador/trackpad) puede disparar
+  // run() dos veces antes de que el re-render oculte el botón. Este ref se marca
+  // en el mismo tick del primer click, así que el segundo click se corta acá mismo,
+  // sin esperar a que React vuelva a renderizar.
+  const submittingRef = useRef(false)
+
   const busy = phase === 'signing' || phase === 'confirming'
   const label = input.kind === 'supply' ? 'Supply' : 'Retiro'
 
   const go = (p: Exclude<Phase, 'error'>) => { setPhase(p); setProgress(INDEX[p]) }
 
   const run = async () => {
+    if (submittingRef.current) return
+    submittingRef.current = true
+
     go('signing')
     try {
       const res = await submitTransaction(input, (s) => go(s))
@@ -29,9 +39,10 @@ export default function TxModal({ input, apy, onClose, onSuccess }: { input: TxI
       go('done')
       onSuccess?.()
     } catch (e) {
-
       setError(e instanceof Error ? e.message : 'No se pudo completar la transacción.')
       setPhase('error')
+    } finally {
+      submittingRef.current = false
     }
   }
 
@@ -72,7 +83,15 @@ export default function TxModal({ input, apy, onClose, onSuccess }: { input: TxI
               <div><dt>Red</dt><dd>Stellar Testnet</dd></div>
               <div><dt>Comisión</dt><dd>0% + fee de red</dd></div>
             </dl>
-            <button ref={mainBtn} className="btn btn-primary btn-block" type="button" onClick={() => void run()}>Confirmar y firmar</button>
+            <button
+              ref={mainBtn}
+              className="btn btn-primary btn-block"
+              type="button"
+              disabled={submittingRef.current}
+              onClick={() => void run()}
+            >
+              Confirmar y firmar
+            </button>
           </>
         )}
 

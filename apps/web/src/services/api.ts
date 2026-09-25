@@ -1,17 +1,17 @@
 // Capa de servicios: las pantallas SOLO llaman a estas funciones.
-import { TransactionBuilder, rpc } from '@stellar/stellar-sdk'
+import { TransactionBuilder, rpc, Contract, Address, nativeToScVal, scValToNative } from '@stellar/stellar-sdk'
+import { Networks } from '@stellar/stellar-sdk'
 import { isConnected, getAddress, isAllowed, signTransaction } from '@stellar/freighter-api'
-import {
-  buildStellarSupplyTx,
-  buildStellarWithdrawTx,
-  prepareStellarBuiltTx,
-  STELLAR_NETWORKS,
-} from '@xoxno/sdk-js/stellar-lending'
 import { fmtUsd } from '../lib/format'
 import type { Market } from '../lib/market'
 import type { Goal } from '../lib/scoring'
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000'
+
+// Constantes globales del contrato desplegado
+const VAULT_CONTRACT_ID = 'CA23V5M6O6DONEXJWZLYGM3CARXDXNL7HEBOTW7WKE7RLRZK7AF5BQQJ'
+const USDC_SAC = 'CCQRAIMWN62JBVUCKCUJFZHDKXMSBHDP7KHFOXI3HETCTJUVIXW5SX7P'
+const USDC_DECIMALS = 7
 
 /* ---------- Tipos ---------- */
 export interface WalletInfo {
@@ -152,6 +152,54 @@ export async function getWallet(publicKey?: string): Promise<WalletInfo> {
   return { address: publicKey, network: 'Testnet', totalUsd, totalUsdc, balances }
 }
 
+/**
+ * Lee el balance REAL que el contrato del vault tiene guardado on-chain
+ * para (user, token). Es una simulación de solo lectura: no gasta fee,
+ * no requiere firma del usuario y no modifica estado.
+ * Devuelve el monto en base units (sin dividir por los decimales del token).
+ */
+export async function getVaultBalanceRaw(userAddress: string, tokenAddress: string): Promise<bigint> {
+  const server = new rpc.Server('https://soroban-testnet.stellar.org')
+  const vaultContract = new Contract(VAULT_CONTRACT_ID)
+
+  const op = vaultContract.call(
+    'balance',
+    new Address(userAddress).toScVal(),
+    new Address(tokenAddress).toScVal(),
+  )
+
+  // Cuenta usada solo para armar la tx de simulación; no hace falta que firme nada.
+  const account = await server.getAccount(userAddress)
+
+  const tx = new TransactionBuilder(account, {
+    fee: '100',
+    networkPassphrase: Networks.TESTNET,
+  })
+    .addOperation(op)
+    .setTimeout(30)
+    .build()
+
+  const simResult = await server.simulateTransaction(tx)
+
+  if (rpc.Api.isSimulationError(simResult)) {
+    throw new Error(`No se pudo leer el balance del vault: ${simResult.error}`)
+  }
+  if (!simResult.result) {
+    throw new Error('La simulación no devolvió resultado.')
+  }
+
+  return scValToNative(simResult.result.retval) as bigint
+}
+
+/**
+ * Igual que getVaultBalanceRaw pero devuelve el número ya convertido
+ * a unidades legibles (dividido por 10^decimals), listo para mostrar en UI.
+ */
+export async function getVaultBalance(userAddress: string, tokenAddress: string, decimals = USDC_DECIMALS): Promise<number> {
+  const raw = await getVaultBalanceRaw(userAddress, tokenAddress)
+  return Number(raw) / 10 ** decimals
+}
+
 export async function getPortfolio(publicKey?: string): Promise<PortfolioInfo> {
   if (!publicKey) {
     return {
@@ -162,45 +210,50 @@ export async function getPortfolio(publicKey?: string): Promise<PortfolioInfo> {
     }
   }
 
-  const [rawPositions, currentMarkets] = await Promise.all([
-    http<{ positions?: any[] }>(`/positions?address=${encodeURIComponent(publicKey)}`),
-    getMarkets(),
-  ])
+  try {
+    const [markets, depositedAmount] = await Promise.all([
+      getMarkets(),
+      getVaultBalance(publicKey, USDC_SAC, USDC_DECIMALS),
+    ])
 
-  const marketByCoordinate = new Map(
-    currentMarkets.map((market) => [`${market.spokeId}:${market.hubId}:${market.assetAddress}`, market])
-  )
-  const pos: Position[] = (rawPositions.positions ?? [])
-    .filter((position) => BigInt(position.supplyAmount ?? '0') > 0n)
-    .map((position) => {
-      const market = marketByCoordinate.get(`${position.spokeId}:${position.hubId}:${position.asset}`)
-      const amount = rayToNumber(position.supplyAmount ?? '0')
-      const priceUsd = market?.priceUsd ?? 0
-      const usd = amount * priceUsd
-      const apy = market?.supplyApy ?? 0
-      return {
-        symbol: market?.symbol ?? shortAsset(position.asset),
-        type: 'Supply en XOXNO',
-        amount,
-        usd,
-        apy,
-        yearlyEstimateUsd: (usd * apy) / 100,
-        assetAddress: position.asset,
-        hubId: position.hubId,
-        spokeId: position.spokeId,
-        decimals: market?.decimals ?? 7,
-        accountNonce: position.accountId,
+    const usdcMarket = markets.find(m => m.symbol === 'USDC')
+    const priceUsd = usdcMarket?.priceUsd ?? 1
+
+    // El balance de la posición ahora sale del contrato (fuente de verdad),
+    // no del balance de wallet en Horizon.
+    const positions: Position[] = depositedAmount > 0 ? [
+      {
+        symbol: 'USDC (Vault Custom)',
+        type: 'Supply en Custom Vault',
+        amount: depositedAmount,
+        usd: depositedAmount * priceUsd,
+        apy: 12.5,
+        yearlyEstimateUsd: (depositedAmount * priceUsd * 12.5) / 100,
+        assetAddress: USDC_SAC,
+        hubId: 1,
+        spokeId: 1,
+        decimals: USDC_DECIMALS,
+        accountNonce: '0',
       }
-    })
+    ] : []
 
-  const totalUsd = pos.reduce((sum, position) => sum + position.usd, 0)
-  const yearlyEstimateUsd = pos.reduce((sum, position) => sum + position.yearlyEstimateUsd, 0)
+    const totalUsd = positions.reduce((sum, position) => sum + position.usd, 0)
+    const yearlyEstimateUsd = positions.reduce((sum, position) => sum + position.yearlyEstimateUsd, 0)
 
-  return {
-    totalUsd,
-    yearlyEstimateUsd,
-    yearlyApy: totalUsd > 0 ? (yearlyEstimateUsd / totalUsd) * 100 : 0,
-    positions: pos,
+    return {
+      totalUsd,
+      yearlyEstimateUsd,
+      yearlyApy: totalUsd > 0 ? (yearlyEstimateUsd / totalUsd) * 100 : 0,
+      positions,
+    }
+  } catch (error) {
+    console.error('Error obteniendo el portafolio:', error)
+    return {
+      totalUsd: 0,
+      yearlyEstimateUsd: 0,
+      yearlyApy: 0,
+      positions: [],
+    }
   }
 }
 
@@ -254,15 +307,6 @@ export async function connectWallet(): Promise<{ address: string }> {
 
 const shortAsset = (asset: string) => asset.length > 12 ? `${asset.slice(0, 4)}…${asset.slice(-4)}` : asset
 
-const rayToNumber = (value: string): number => {
-  const ray = BigInt(value)
-  const denominator = 10n ** 27n
-  const whole = ray / denominator
-  const fraction = ray % denominator
-  // Keep a bounded precision when crossing the BigInt/Number boundary for UI.
-  return Number(whole) + Number(fraction / (10n ** 15n)) / 1_000_000_000_000
-}
-
 const toBaseUnits = (amount: number, decimals: number): string => {
   if (!Number.isInteger(decimals) || decimals < 0 || decimals > 18) throw new Error('El activo tiene una precisión no compatible.')
   if (!Number.isFinite(amount) || amount <= 0 || amount > 1_000_000) throw new Error('El monto no es válido.')
@@ -283,87 +327,147 @@ const requireInteger = (value: unknown, field: string): number => {
 
 export async function submitTransaction(input: TxInput, onStage: (s: TxStage) => void): Promise<TxResult> {
   try {
-      if (!/^C[A-Z2-7]{55}$/.test(input.assetAddress)) throw new Error('El activo de XOXNO no es un contrato Soroban válido.')
-      if (!Number.isInteger(input.hubId) || input.hubId <= 0 || !Number.isInteger(input.spokeId) || input.spokeId <= 0) {
-        throw new Error('El mercado de XOXNO no tiene una coordenada válida.')
-      }
-      if (input.kind === 'withdraw' && !input.accountNonce) throw new Error('No se encontró la cuenta de lending para el retiro.')
+    onStage('signing')
 
-      onStage('signing')
+    const networkPassphrase = Networks.TESTNET
+    const sorobanRpcUrl = 'https://soroban-testnet.stellar.org'
 
-      const deployment = STELLAR_NETWORKS.stellarTestnet
-      const networkPassphrase = deployment.passphrase
-      const addressResult = await getAddress()
-      const userAddress = typeof addressResult === 'string' ? addressResult : addressResult?.address
-      if (!userAddress) throw new Error('No se pudo obtener una dirección válida de Freighter.')
+    const addressResult = await getAddress()
+    const userAddress = typeof addressResult === 'string' ? addressResult : addressResult?.address
+    if (!userAddress) throw new Error('No se pudo obtener una dirección válida de Freighter.')
 
-      const server = new rpc.Server(deployment.sorobanRpcUrl)
-      const account = await server.getAccount(userAddress)
-      const builderOptions = {
-        network: 'testnet' as const,
-        caller: userAddress,
-        sourceSequence: account.sequenceNumber(),
-        controllerAddress: deployment.lendingController,
-      }
-      const amount = input.kind === 'withdraw' && input.withdrawAll ? '0' : toBaseUnits(input.amount, input.decimals)
-      const built = input.kind === 'supply'
-        ? buildStellarSupplyTx(builderOptions, {
-            accountNonce: 0,
-            spokeId: input.spokeId,
-            hubId: input.hubId,
-            asset: input.assetAddress,
-            amount,
-          })
-        : buildStellarWithdrawTx(builderOptions, {
-            accountNonce: input.accountNonce!,
-            hubId: input.hubId,
-            asset: input.assetAddress,
-            amount,
-          })
-      const preparedXdr = await prepareStellarBuiltTx(server, built, {
-        network: 'testnet',
-        invokedContractId: deployment.lendingController,
-      })
+    // Si el usuario pidió "retirar todo", el monto exacto sale del balance
+    // real que el contrato tiene guardado, no de un cálculo hecho en el front.
+    // Esto evita mandar un amount levemente por encima del balance real
+    // (por redondeo) y disparar el panic "insufficient deposited balance".
+    let amountBaseUnits: bigint
+    if (input.kind === 'withdraw' && input.withdrawAll) {
+      const realBalance = await getVaultBalanceRaw(userAddress, input.assetAddress)
+      if (realBalance <= 0n) throw new Error('No hay balance depositado para retirar.')
+      amountBaseUnits = realBalance
+    } else {
+      amountBaseUnits = BigInt(toBaseUnits(input.amount, input.decimals))
+    }
 
-      const signResult = await signTransaction(preparedXdr, {
+
+    const server = new rpc.Server(sorobanRpcUrl)
+    let account = await server.getAccount(userAddress)
+
+    // PASO 1: Aprobación previa si la operación es 'supply'
+    if (input.kind === 'supply') {
+      const tokenContract = new Contract(USDC_SAC)
+      const approveOperation = tokenContract.call(
+        'approve',
+        new Address(userAddress).toScVal(),
+        new Address(VAULT_CONTRACT_ID).toScVal(),
+        nativeToScVal(amountBaseUnits, { type: 'i128' }),
+        nativeToScVal(6000000, { type: 'u32' })
+      )
+
+      const approveTx = new TransactionBuilder(account, {
+        fee: '10000',
         networkPassphrase,
       })
+        .addOperation(approveOperation)
+        .setTimeout(30)
+        .build()
 
-      // Aseguramos obtener la cadena XDR independientemente del formato devuelto por Freighter
-      const signedXdr = typeof signResult === 'string' ? signResult : (signResult as any)?.signedTxXdr || signResult
+      const preparedApproveTx = await server.prepareTransaction(approveTx)
+      const signedApproveResult = await signTransaction(preparedApproveTx.toXDR(), {
+        networkPassphrase,
+        accountToSign: userAddress,
+      } as any)
+      const signedApproveXdr = typeof signedApproveResult === 'string' 
+        ? signedApproveResult 
+        : (signedApproveResult as any)?.signedTxXdr || (signedApproveResult as any)?.signedTx || signedApproveResult
 
-      onStage('confirming')
+      const signedApproveTxObj = TransactionBuilder.fromXDR(signedApproveXdr, networkPassphrase)
+      const approveSendResult = await server.sendTransaction(signedApproveTxObj)
 
-      // Reconstruimos el objeto Transaction desde la cadena XDR
-      if (typeof signedXdr !== 'string') throw new Error('Freighter no devolvió una transacción firmada válida.')
-      const signedTransaction = TransactionBuilder.fromXDR(signedXdr, networkPassphrase)
-
-      // Se envía el objeto Transaction reconstruido a la RPC
-      let sendResult = await server.sendTransaction(signedTransaction)
-
-      if (sendResult.status === 'ERROR') {
-        throw new Error(`Error enviando la transacción: ${JSON.stringify(sendResult)}`)
+      if (approveSendResult.status === 'ERROR') {
+        throw new Error(`Error en aprobación previa: ${JSON.stringify(approveSendResult)}`)
       }
 
-      // Polling bounded to avoid leaving the UI in a permanent confirming state.
-      let statusResponse = await server.getTransaction(sendResult.hash)
-      let attempts = 0
-      const maxAttempts = 30
-      while (statusResponse.status === 'NOT_FOUND' && attempts < maxAttempts) {
+      let approveStatus = await server.getTransaction(approveSendResult.hash)
+      let approveAttempts = 0
+      while (approveStatus.status === 'NOT_FOUND' && approveAttempts < 20) {
         await new Promise((resolve) => setTimeout(resolve, 1000))
-        statusResponse = await server.getTransaction(sendResult.hash)
-        attempts += 1
+        approveStatus = await server.getTransaction(approveSendResult.hash)
+        approveAttempts += 1
       }
 
-      if (statusResponse.status === 'NOT_FOUND') {
-        throw new Error('La transacción sigue pendiente. Consulta el hash en el explorador antes de reintentar.')
-      }
+      account = await server.getAccount(userAddress)
+    }
 
-      if (statusResponse.status === 'SUCCESS') {
-        return { hash: sendResult.hash }
-      } else {
-        throw new Error(`Transacción fallida en la red con estado: ${statusResponse.status}`)
-      }
+    // PASO 2: Invocación directa al Vault (deposit o withdraw)
+    const vaultContract = new Contract(VAULT_CONTRACT_ID)
+
+    let vaultOperation
+    if (input.kind === 'supply') {
+      vaultOperation = vaultContract.call(
+        'deposit',
+        new Address(userAddress).toScVal(),
+        new Address(USDC_SAC).toScVal(),
+        nativeToScVal(amountBaseUnits, { type: 'i128' })
+      )
+    } else {
+      vaultOperation = vaultContract.call(
+        'withdraw',
+        new Address(userAddress).toScVal(),
+        new Address(USDC_SAC).toScVal(),
+        nativeToScVal(amountBaseUnits, { type: 'i128' })
+      )
+    }
+
+    const tx = new TransactionBuilder(account, {
+      fee: '100000',
+      networkPassphrase,
+    })
+      .addOperation(vaultOperation)
+      .setTimeout(30)
+      .build()
+
+    const preparedTx = await server.prepareTransaction(tx)
+    
+    // Firma asegurando el paso correcto de los parámetros que Freighter requiere para Soroban
+    const signResult = await signTransaction(preparedTx.toXDR(), {
+      networkPassphrase,
+      accountToSign: userAddress,
+    } as any)
+
+    const signedXdr = typeof signResult === 'string' 
+      ? signResult 
+      : (signResult as any)?.signedTxXdr || (signResult as any)?.signedTx || signResult
+
+    onStage('confirming')
+
+    if (typeof signedXdr !== 'string') throw new Error('Freighter no devolvió una transacción firmada válida.')
+    const signedTransaction = TransactionBuilder.fromXDR(signedXdr, networkPassphrase)
+
+    const sendResult = await server.sendTransaction(signedTransaction)
+
+    if (sendResult.status === 'ERROR') {
+      throw new Error(`Error enviando la transacción: ${JSON.stringify(sendResult)}`)
+    }
+
+    let statusResponse = await server.getTransaction(sendResult.hash)
+    let attempts = 0
+    const maxAttempts = 30
+    while (statusResponse.status === 'NOT_FOUND' && attempts < maxAttempts) {
+      await new Promise((resolve) => setTimeout(resolve, 1000))
+      statusResponse = await server.getTransaction(sendResult.hash)
+      attempts += 1
+    }
+
+    if (statusResponse.status === 'NOT_FOUND') {
+      throw new Error('La transacción sigue pendiente. Consulta el hash en el explorador antes de reintentar.')
+    }
+
+    if (statusResponse.status === 'SUCCESS') {
+      return { hash: sendResult.hash }
+    } else {
+      throw new Error(`Transacción fallida en la red con estado: ${statusResponse.status}`)
+    }
 
   } catch (err: any) {
     console.error('Error en transacción de Soroban:', err)

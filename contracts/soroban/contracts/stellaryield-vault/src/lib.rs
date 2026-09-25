@@ -5,6 +5,12 @@ use soroban_sdk::{contract, contractimpl, contracttype, token, Address, Env, Sym
 const BPS_DENOMINATOR: i128 = 10_000;
 const MAX_FEE_BPS: i128 = 1_000;
 
+// Constantes para extender la vida útil del almacenamiento (TTL) en Soroban
+const INSTANCE_LIFETIME_THRESHOLD: u32 = 17_280; // ~1 día en ledgers
+const INSTANCE_BUMP_AMOUNT: u32 = 518_400;       // ~30 días en ledgers
+const PERSISTENT_LIFETIME_THRESHOLD: u32 = 17_280;
+const PERSISTENT_BUMP_AMOUNT: u32 = 518_400;
+
 #[contracttype]
 #[derive(Clone, Debug, PartialEq)]
 pub struct VaultConfig {
@@ -46,6 +52,7 @@ fn require_valid_fee(fee_bps: i128) {
 }
 
 fn config(env: &Env) -> VaultConfig {
+    env.storage().instance().extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
     env.storage()
         .instance()
         .get(&DataKey::Config)
@@ -57,16 +64,19 @@ fn balance_key(user: &Address, token_address: &Address) -> DataKey {
 }
 
 fn balance_of(env: &Env, user: &Address, token_address: &Address) -> i128 {
-    env.storage()
-        .persistent()
-        .get(&balance_key(user, token_address))
-        .unwrap_or(0)
+    let key = balance_key(user, token_address);
+    if env.storage().persistent().has(&key) {
+        env.storage().persistent().extend_ttl(&key, PERSISTENT_LIFETIME_THRESHOLD, PERSISTENT_BUMP_AMOUNT);
+        env.storage().persistent().get(&key).unwrap_or(0)
+    } else {
+        0
+    }
 }
 
 fn set_balance(env: &Env, user: &Address, token_address: &Address, amount: i128) {
-    env.storage()
-        .persistent()
-        .set(&balance_key(user, token_address), &amount);
+    let key = balance_key(user, token_address);
+    env.storage().persistent().set(&key, &amount);
+    env.storage().persistent().extend_ttl(&key, PERSISTENT_LIFETIME_THRESHOLD, PERSISTENT_BUMP_AMOUNT);
 }
 
 #[contractimpl]
@@ -78,10 +88,12 @@ impl StellarYieldVault {
         }
         admin.require_auth();
         require_valid_fee(fee_bps);
+        
         env.storage().instance().set(
             &DataKey::Config,
             &VaultConfig { admin, treasury, fee_bps },
         );
+        env.storage().instance().extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
     }
 
     /// Only the configured admin can change the fixed withdrawal destination or fee.
@@ -89,9 +101,12 @@ impl StellarYieldVault {
         let mut current = config(&env);
         current.admin.require_auth();
         require_valid_fee(fee_bps);
+        
         current.treasury = treasury;
         current.fee_bps = fee_bps;
+        
         env.storage().instance().set(&DataKey::Config, &current);
+        env.storage().instance().extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
     }
 
     pub fn balance(env: Env, user: Address, token_address: Address) -> i128 {
@@ -106,20 +121,21 @@ impl StellarYieldVault {
 
         let current_balance = balance_of(&env, &from, &token_address);
         let next_balance = current_balance.checked_add(amount).expect("balance overflow");
-        // All state rolls back if the token transfer fails.
+
         set_balance(&env, &from, &token_address, next_balance);
 
         let client = token::Client::new(&env, &token_address);
         let contract_address = env.current_contract_address();
+        
         client.transfer(&from, &contract_address, &amount);
+
         env.events().publish(
             (Symbol::new(&env, "deposit"), from),
             (token_address, amount),
         );
     }
 
-    /// Withdraws only the caller's own credited balance. Callers cannot select
-    /// the treasury or fee rate.
+    /// Withdraws only the caller's own credited balance.
     pub fn withdraw(env: Env, user: Address, token_address: Address, amount: i128) {
         let current_config = config(&env);
         user.require_auth();
@@ -132,14 +148,17 @@ impl StellarYieldVault {
 
         let fee_amount = amount.checked_mul(current_config.fee_bps).expect("fee overflow") / BPS_DENOMINATOR;
         let user_amount = amount.checked_sub(fee_amount).expect("fee exceeds amount");
+
         set_balance(&env, &user, &token_address, current_balance - amount);
 
         let client = token::Client::new(&env, &token_address);
         let contract_address = env.current_contract_address();
+
         if fee_amount > 0 {
             client.transfer(&contract_address, &current_config.treasury, &fee_amount);
         }
         client.transfer(&contract_address, &user, &user_amount);
+
         env.events().publish(
             (Symbol::new(&env, "withdraw"), user),
             (user_amount, fee_amount, current_config.treasury),
