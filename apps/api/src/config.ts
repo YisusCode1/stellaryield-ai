@@ -78,7 +78,7 @@ export const loadConfig = (env: NodeJS.ProcessEnv = process.env): AppConfig => {
 
   return Object.freeze({
     environment,
-    port: readPort(env.API_PORT),
+    port: readPort(env.PORT ?? env.API_PORT),
     network: readNetwork(env.STELLAR_NETWORK),
     allowedOrigins,
     marketSource,
